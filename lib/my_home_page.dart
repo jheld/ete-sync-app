@@ -48,6 +48,8 @@ class _MyHomePageState extends State<MyHomePage> {
   final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey =
       GlobalKey<RefreshIndicatorState>();
 
+  final _selectedTasks = <String>{};
+
   @override
   void dispose() {
     this.widget.client.dispose();
@@ -153,6 +155,9 @@ class _MyHomePageState extends State<MyHomePage> {
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: Text(widget.title),
+        actions: _selectedTasks.isNotEmpty
+            ? [IconButton(onPressed: () {}, icon: const Icon(Icons.snooze))]
+            : null,
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
@@ -285,22 +290,24 @@ class _MyHomePageState extends State<MyHomePage> {
       EtebaseItemManager itemManager,
       Map<EtebaseItem, Map<String, dynamic>> itemMap,
       Map<String, dynamic> fullSnapshot) {
+    final client = this.widget.client;
     List<Widget> children = [];
     final itemsSorted = <ItemMapWrapper>[];
     final itemsByUID = <String, ItemMapWrapper>{};
+    var dtToday = DateTime.now().copyWith(hour: 23, minute: 59, second: 59);
     for (final entry in itemMap.entries) {
       final key = entry.key;
       final value = entry.value;
       late final VCalendar icalendar;
+      if (value["itemIsDeleted"]) {
+        continue;
+      }
+
       try {
         icalendar = VComponent.parse(
             utf8.decode(value["itemContent"] as Uint8List),
             customParser: iCalendarCustomParser) as VCalendar;
       } catch (e) {
-        continue;
-      }
-
-      if (value["itemIsDeleted"]) {
         continue;
       }
 
@@ -406,9 +413,10 @@ class _MyHomePageState extends State<MyHomePage> {
         // }
       }
 
-      if (dateSearchEnd != null &&
+      if ((todaySearch || dateSearchEnd != null) &&
           (dateForLogicStart != null || dateForLogicDue != null) &&
-          (dateForLogicStart ?? dateForLogicDue!).compareTo(dateSearchEnd!) ==
+          (dateForLogicStart ?? dateForLogicDue!)
+                  .compareTo((todaySearch ? dtToday : dateSearchEnd!)) ==
               1 &&
           _searchTextController.text.isEmpty) {
         continue;
@@ -421,6 +429,8 @@ class _MyHomePageState extends State<MyHomePage> {
       };
       final child = ListTile(
         title: Text(compTodo.summary ?? ""),
+        selected: _selectedTasks.contains(item.value["itemUid"]),
+        selectedTileColor: Colors.grey[100],
         subtitle: Text(
             'start: ${icalendar.todo!.start ?? (compTodo.relatedTo != null ? dateForLogicStart : null)}, due: ${icalendar.todo!.due ?? (compTodo.relatedTo != null ? dateForLogicDue : null)}'),
         trailing: IconButton(
@@ -436,28 +446,25 @@ class _MyHomePageState extends State<MyHomePage> {
                   await onPressedToggleCompletion(
                           eteItem, icalendar!, itemManager, compTodo)
                       .then((value) async {
+                    final username = getUsernameInCacheDir();
+                    final cacheClient = await EtebaseFileSystemCache.create(
+                        client, cacheDir, username);
+                    final colUid = getCollectionUIDInCacheDir();
+                    await cacheClient.itemSet(
+                        itemManager, colUid, value["item"]);
+                    await cacheClient.dispose();
+                    (fullSnapshot["items"]! as Map).remove(eteItem);
+                    (fullSnapshot["items"]! as Map)[value["item"]] = {
+                      "itemContent": value["itemContent"],
+                      "itemUid": value["itemUid"],
+                      "itemIsDeleted": value["itemIsDeleted"]
+                    };
                     setState(() {
-                      (fullSnapshot["items"]! as Map).remove(eteItem);
-                      (fullSnapshot["items"]! as Map)[value["item"]] = {
-                        "itemContent": value["itemContent"],
-                        "itemUid": value["itemUid"],
-                        "itemIsDeleted": value["itemIsDeleted"]
-                      };
                       _itemListResponse =
                           Future<Map<String, dynamic>>.value(fullSnapshot);
                     });
-
-                    final username = getUsernameInCacheDir();
-                    final cacheClient = await EtebaseFileSystemCache.create(
-                        this.widget.client, cacheDir, username);
-                    final colUid = getCollectionUIDInCacheDir();
-                    await cacheClient.itemSet(
-                        this.widget.itemManager, colUid, value["item"]);
-                    await cacheClient.dispose();
-                  }).onError((error, stackTrace) {
-                    if (kDebugMode) {
-                      print(error);
-                    }
+                    return value;
+                  }, onError: ((error, stackTrace) {
                     if (error is EtebaseException) {
                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                         content: Text(error.message),
@@ -466,12 +473,19 @@ class _MyHomePageState extends State<MyHomePage> {
                           label: 'OK',
                           onPressed: () async {
                             if (error.code == EtebaseErrorCode.conflict) {
-                              final itemUpdatedFromServer = await this
-                                  .widget
-                                  .itemManager
+                              final itemUpdatedFromServer = await itemManager
                                   .fetch(await eteItem.getUid());
                               final contentFromServer =
                                   await itemUpdatedFromServer.getContent();
+
+                              final username = getUsernameInCacheDir();
+                              final cacheClient =
+                                  await EtebaseFileSystemCache.create(
+                                      client, cacheDir, username);
+                              final colUid = getCollectionUIDInCacheDir();
+                              await cacheClient.itemSet(
+                                  itemManager, colUid, itemUpdatedFromServer);
+                              await cacheClient.dispose();
 
                               (fullSnapshot["items"]! as Map).remove(eteItem);
 
@@ -496,11 +510,24 @@ class _MyHomePageState extends State<MyHomePage> {
                         ),
                       ));
                     }
-                  });
+                  }));
                 },
         ),
-        onTap: () => onPressedItemWidget(context, eteItem, icalendar!,
-                itemManager, item.value, this.widget.client)
+        onLongPress: () {
+          setState(() {
+            if (!_selectedTasks.contains(item.value["itemUid"])) {
+              _selectedTasks.add(item.value["itemUid"]);
+              //_anySelectedTasks = true;
+            } else {
+              _selectedTasks.remove(item.value["itemUid"]);
+              if (_selectedTasks.isEmpty) {
+                //_anySelectedTasks = false;
+              }
+            }
+          });
+        },
+        onTap: () => onPressedItemWidget(
+                context, eteItem, icalendar!, itemManager, item.value, client)
             .then((value) {
           if (value != null) {
             (fullSnapshot["items"]! as Map).remove(eteItem);

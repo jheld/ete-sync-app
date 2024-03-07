@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:ete_sync_app/my_home_page.dart';
 import 'package:ete_sync_app/util.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'package:etebase_flutter/etebase_flutter.dart';
@@ -9,8 +10,26 @@ import 'package:etebase_flutter/etebase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'package:timezone/data/latest.dart' as tz;
+import 'package:window_manager/window_manager.dart';
 
 Future<void> main() async {
+  if (!kIsWeb && Platform.isLinux) {
+    WidgetsFlutterBinding.ensureInitialized();
+    // Must add this line.
+    await windowManager.ensureInitialized();
+    WindowOptions windowOptions = WindowOptions(
+      size: const Size(700, 800),
+      center: true,
+      //backgroundColor: Colors.transparent,
+      skipTaskbar: false,
+      titleBarStyle: TitleBarStyle.normal,
+      title: "EteSync Tasks",
+    );
+    windowManager.waitUntilReadyToShow(windowOptions, () async {
+      await windowManager.show();
+      await windowManager.focus();
+    });
+  }
   await dotenv.load(fileName: "assets/.env");
   tz.initializeTimeZones();
   final client = await getEtebaseClient(); // uses default server
