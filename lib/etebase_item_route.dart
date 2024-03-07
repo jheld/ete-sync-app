@@ -1,0 +1,1236 @@
+import 'dart:convert';
+import 'package:datetime_picker_formfield_new/datetime_picker_formfield.dart';
+import 'package:enough_icalendar/enough_icalendar.dart';
+import 'package:ete_sync_app/util.dart';
+import 'package:etebase_flutter/etebase_flutter.dart';
+import 'package:flutter/foundation.dart';
+
+import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:rrule_generator/rrule_generator.dart';
+
+class EtebaseItemCreateRoute extends StatefulWidget {
+  const EtebaseItemCreateRoute({
+    super.key,
+    required this.itemManager,
+    required this.client,
+  });
+
+  final EtebaseItemManager itemManager;
+  final EtebaseClient client;
+
+  @override
+  State<StatefulWidget> createState() => _EtebaseItemCreateRouteState();
+}
+
+class _EtebaseItemCreateRouteState extends State<EtebaseItemCreateRoute> {
+  final _formKey = GlobalKey<FormState>();
+  final TextEditingController summaryController = TextEditingController();
+  final TextEditingController descriptionController = TextEditingController();
+  final TextEditingController startController = TextEditingController();
+  final TextEditingController dueController = TextEditingController();
+  bool wasEdited = false;
+  TodoStatus _status = TodoStatus.unknown;
+  Priority? _priority = Priority.undefined;
+  List<VAlarm> alarms = [];
+
+  final recurrenceRuleController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+
+    summaryController.text = "";
+    descriptionController.text = "";
+    startController.text = "";
+    dueController.text = "";
+    recurrenceRuleController.text = "";
+    _status = TodoStatus.unknown;
+    _priority = Priority.undefined;
+    alarms = <VAlarm>[];
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+    summaryController.dispose();
+    startController.dispose();
+    dueController.dispose();
+    recurrenceRuleController.dispose();
+    descriptionController.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+        appBar: AppBar(
+          leading: BackButton(onPressed: () {
+            Navigator.maybePop(context, null);
+          }),
+          // TRY THIS: Try changing the color here to a specific color (to
+          // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
+          // change color while the other colors stay the same.
+          backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+          // Here we take the value from the MyHomePage object that was created by
+          // the App.build method, and use it to set our appbar title.
+          title: const Text("Item view"),
+        ),
+        body: Center(
+          child: Column(
+            children: [
+              Form(
+                  key: _formKey,
+                  child: Column(children: [
+                    TextFormField(
+                      controller: summaryController,
+                      validator: (String? value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter some text';
+                        }
+                        return null;
+                      },
+                      decoration: const InputDecoration(labelText: "Summary"),
+                      onChanged: (val) {},
+                    ),
+                    DropdownButtonFormField(
+                      items: Priority.values
+                          .map((e) => DropdownMenuItem(
+                                value: e,
+                                child: Text(e.name),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() {
+                            _priority = value;
+                          });
+                        }
+                      },
+                      decoration: const InputDecoration(labelText: "Priority"),
+                      value: _priority,
+                    ),
+                    DropdownButtonFormField(
+                      items: TodoStatus.values
+                          .map((e) => DropdownMenuItem(
+                                value: e,
+                                child: Text(e.name),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() {
+                            _status = value;
+                          });
+                        }
+                      },
+                      validator: (TodoStatus? value) {
+                        if (value == null) {
+                          return "can't empty";
+                        } else {
+                          return null;
+                        }
+                      },
+                      decoration: const InputDecoration(labelText: "Status"),
+                      value: _status,
+                    ),
+                    DateTimeField(
+                      format: DateFormat("yyyy-MM-dd HH:mm"),
+                      decoration:
+                          const InputDecoration(labelText: "Start date"),
+                      controller: startController,
+                      onShowPicker: (context, currentValue) async {
+                        return await showDatePicker(
+                          context: context,
+                          firstDate: DateTime(2000),
+                          initialDate: currentValue ?? DateTime.now(),
+                          lastDate: DateTime(2100),
+                        ).then((DateTime? date) async {
+                          if (date != null) {
+                            final time = await showTimePicker(
+                              context: context,
+                              initialTime: TimeOfDay.fromDateTime(
+                                  currentValue ?? DateTime.now()),
+                            );
+                            return DateTimeField.combine(date, time);
+                          } else {
+                            return currentValue;
+                          }
+                        });
+                      },
+                    ),
+                    DateTimeField(
+                      format: DateFormat("yyyy-MM-dd HH:mm"),
+                      decoration: const InputDecoration(labelText: "Due date"),
+                      controller: dueController,
+                      onShowPicker: (context, currentValue) async {
+                        return await showDatePicker(
+                          context: context,
+                          firstDate: DateTime(2000),
+                          initialDate: currentValue ?? DateTime.now(),
+                          lastDate: DateTime(2100),
+                        ).then((DateTime? date) async {
+                          if (date != null) {
+                            final time = await showTimePicker(
+                              context: context,
+                              initialTime: TimeOfDay.fromDateTime(
+                                  currentValue ?? DateTime.now()),
+                            );
+                            return DateTimeField.combine(date, time);
+                          } else {
+                            return currentValue;
+                          }
+                        });
+                      },
+                    ),
+                    TextFormField(
+                      controller: descriptionController,
+                      initialValue: null,
+                      validator: (String? value) {
+                        // if (value == null || value.isEmpty) {
+                        //   return 'Please enter some text';
+                        // }
+                        return null;
+                      },
+                      decoration:
+                          const InputDecoration(labelText: "Description"),
+                      onChanged: (val) {},
+                    ),
+                    TextFormField(
+                      controller: recurrenceRuleController,
+                      decoration: const InputDecoration(labelText: "RRULE"),
+                    ),
+                    ElevatedButton(
+                      child: const Text('RRULE Open'),
+                      onPressed: () {
+                        showDialog(
+                          context: context,
+                          builder: (BuildContext context) => AlertDialog(
+                            content: SingleChildScrollView(
+                              child: RRuleGenerator(
+                                config: RRuleGeneratorConfig(),
+                                initialRRule: recurrenceRuleController.text,
+                                textDelegate: const EnglishRRuleTextDelegate(),
+                                onChange: (value) {
+                                  recurrenceRuleController.text =
+                                      value.startsWith("RRULE:")
+                                          ? value.replaceFirst("RRULE:", "")
+                                          : value;
+                                },
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    Column(children: [
+                      ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: alarms.length,
+                          itemBuilder: (BuildContext context, int index) {
+                            return ListTile(
+                              title: TextFormField(
+                                initialValue: alarms[index]
+                                        .triggerRelativeDuration
+                                        ?.toString() ??
+                                    alarms[index]
+                                        .triggerDate
+                                        ?.toIso8601String() ??
+                                    "",
+                                validator: (value) {
+                                  try {
+                                    if (value == null || value == "") {
+                                      return 'Cannot be blank';
+                                    }
+                                    IsoDuration.parse(value);
+                                  } on FormatException {
+                                    return 'Not a valid ISO duration';
+                                  }
+                                  return null;
+                                },
+                              ),
+                            );
+                          }),
+                    ]),
+                    TextButton(
+                        onPressed: () async {
+                          if (_formKey.currentState!.validate()) {
+                            final icalendar = VCalendar();
+                            final todoComp = VTodo(parent: icalendar);
+                            icalendar.children.add(todoComp);
+
+                            bool sequenceChange = false;
+                            /*
+                            
+                            sequence must change if:
+                            o  "DTSTART"
+                            
+                            o  "DTEND"
+                            
+                            o  "DURATION"
+                            
+                            o  "DUE"
+                            
+                            o  "RRULE"
+                            
+                            o  "RDATE"
+                            
+                            o  "EXDATE"
+                            
+                            o  "STATUS"
+                            */
+                            bool statusChanged = false;
+                            if (_status != todoComp.status) {
+                              todoComp.status = _status;
+                              sequenceChange = true;
+                              statusChanged = true;
+                            }
+                            if (_priority != todoComp.priority) {
+                              todoComp.priority = _priority;
+                            }
+                            if (todoComp.summary != summaryController.text) {
+                              todoComp.summary = summaryController.text;
+                            }
+                            if (todoComp.description !=
+                                descriptionController.text) {
+                              todoComp.description = descriptionController.text;
+                            }
+
+                            todoComp.lastModified = DateTime.now();
+                            final updatedRecurrenceRule =
+                                recurrenceRuleController.text.isNotEmpty
+                                    ? Recurrence.parse(
+                                        recurrenceRuleController.text)
+                                    : null;
+                            if (todoComp.recurrenceRule !=
+                                updatedRecurrenceRule) {
+                              todoComp.recurrenceRule = updatedRecurrenceRule;
+                              sequenceChange = true;
+                              //if (statusChanged) {
+                              //  todoComp.recurrenceId = todoComp.start;
+                              //}
+                            }
+                            //if (todoComp.recurrenceRule != null && statusChanged) {
+                            //todoComp.recurrenceId = todoComp.start;
+                            // }
+                            final updatedStart =
+                                DateTime.tryParse(startController.text);
+                            final updatedDue =
+                                DateTime.tryParse(dueController.text);
+
+                            if ((updatedDue != null && todoComp.due == null) ||
+                                (updatedDue == null && todoComp.due != null)) {
+                              todoComp.due = updatedDue;
+                              sequenceChange = true;
+                            } else if (todoComp.due != null &&
+                                updatedDue != null &&
+                                todoComp.due!.compareTo(updatedDue) != 0) {
+                              todoComp.due = updatedDue;
+                              sequenceChange = true;
+                            }
+                            if ((updatedStart != null &&
+                                    todoComp.start == null) ||
+                                (updatedStart == null &&
+                                    todoComp.start != null)) {
+                              todoComp.start = updatedStart;
+                              sequenceChange = true;
+                            } else if (todoComp.start != null &&
+                                updatedStart != null &&
+                                todoComp.start!.compareTo(updatedStart) != 0) {
+                              todoComp.start = updatedStart;
+                              sequenceChange = true;
+                            }
+
+                            if (sequenceChange) {
+                              todoComp.sequence = (todoComp.sequence ?? 0) + 1;
+                            }
+                            todoComp.uid = VCalendar.createUid();
+                            todoComp.timeStamp = DateTime.now();
+                            final nextTodo = (statusChanged &&
+                                    (todoComp.status == TodoStatus.completed ||
+                                        todoComp.status ==
+                                            TodoStatus.cancelled))
+                                ? getNextOccurrence(
+                                    todoComp, todoComp.recurrenceRule)
+                                : todoComp;
+
+                            final actualNextTodo = nextTodo ?? todoComp;
+
+                            actualNextTodo.checkValidity();
+                            final item = await this.widget.itemManager.create(
+                                EtebaseItemMetadata(mtime: DateTime.now()),
+                                utf8.encode(todoComp.parent!.toString()));
+
+                            if (kDebugMode) {
+                              print("--------BEGIN Intended changes---------");
+                              print(actualNextTodo.parent!.toString());
+                              print("--------END Intended changes-----------");
+                            }
+
+                            await this.widget.itemManager.transaction([item]);
+
+                            final itemUpdatedFromServer = await this
+                                .widget
+                                .itemManager
+                                .fetch((await item.getUid()));
+
+                            final username = getUsernameInCacheDir();
+
+                            final cacheClient =
+                                await EtebaseFileSystemCache.create(
+                                    this.widget.client, cacheDir, username);
+                            final colUid = getCollectionUIDInCacheDir();
+                            await cacheClient.itemSet(this.widget.itemManager,
+                                colUid, itemUpdatedFromServer);
+                            await cacheClient.dispose();
+
+                            final updatedItemContent =
+                                await itemUpdatedFromServer.getContent();
+                            final updateVCalendar = VComponent.parse(
+                                utf8.decode(updatedItemContent)) as VCalendar;
+                            final sendingToNavigator = {
+                              "item": itemUpdatedFromServer,
+                              "icalendar": itemUpdatedFromServer,
+                              "itemContent": updatedItemContent,
+                              "itemIsDeleted":
+                                  await itemUpdatedFromServer.isDeleted(),
+                              "itemUid": await itemUpdatedFromServer.getUid(),
+                              "todo": updateVCalendar.todo!,
+                            };
+                            if (context.mounted) {
+                              Navigator.maybePop(context, sendingToNavigator);
+                            }
+                          }
+                        },
+                        child: const Text("save")),
+                    const Divider(height: 50),
+                    IconButton(
+                        onPressed: () async {
+                          final action = await showDialog(
+                              context: context,
+                              builder: (BuildContext context) {
+                                return AlertDialog(
+                                  title: const Text('Discard creating todo'),
+                                  content: const Text(
+                                      'Would you like to discard creating this todo?'),
+                                  actions: <Widget>[
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, 'Continue'),
+                                      child: const Text('Continue'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, 'OK'),
+                                      child: const Text('OK'),
+                                    ),
+                                  ],
+                                );
+                              });
+                          if (action == "OK") {
+                            if (context.mounted) Navigator.of(context).pop();
+                          }
+                        },
+                        icon: const Icon(Icons.cancel)),
+                  ])),
+            ],
+          ),
+        ));
+  }
+}
+
+class EtebaseItemRoute extends StatefulWidget {
+  const EtebaseItemRoute({
+    super.key,
+    required this.item,
+    required this.icalendar,
+    required this.itemManager,
+    required this.itemMap,
+    required this.client,
+  });
+
+  final EtebaseItem item;
+  final EtebaseItemManager itemManager;
+  final VCalendar icalendar;
+  final Map<String, dynamic> itemMap;
+  final EtebaseClient client;
+
+  @override
+  State<StatefulWidget> createState() => _EtebaseItemRouteState();
+}
+
+class _EtebaseItemRouteState extends State<EtebaseItemRoute> {
+  final _formKey = GlobalKey<FormState>();
+  final TextEditingController summaryController = TextEditingController();
+  final TextEditingController descriptionController = TextEditingController();
+  final TextEditingController startController = TextEditingController();
+  final TextEditingController dueController = TextEditingController();
+  bool wasEdited = false;
+  TodoStatus _status = TodoStatus.unknown;
+  Priority? _priority = Priority.undefined;
+  List<VAlarm> alarms = [];
+
+  final recurrenceRuleController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    final todoComp = this.widget.icalendar.todo!;
+    summaryController.text = todoComp.summary ?? "";
+    descriptionController.text = todoComp.description ?? "";
+    startController.text = todoComp.start != null
+        ? DateFormat("yyyy-MM-dd HH:mm").format(todoComp.start!)
+        : "";
+    dueController.text = todoComp.due != null
+        ? DateFormat("yyyy-MM-dd HH:mm").format(todoComp.due!)
+        : "";
+    recurrenceRuleController.text = todoComp.recurrenceRule?.toString() ?? "";
+    _status = todoComp.status;
+    _priority = todoComp.priority;
+    alarms = todoComp.children
+        .where((element) => element.componentType == VComponentType.alarm)
+        .map((element) => element as VAlarm)
+        .toList();
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+    summaryController.dispose();
+    startController.dispose();
+    dueController.dispose();
+    recurrenceRuleController.dispose();
+    descriptionController.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final todoComp = this.widget.icalendar.todo!;
+
+    /*
+  const Recurrence(
+    this.frequency, {
+    this.until,
+    this.count,
+    int? interval,
+    this.bySecond,
+    this.byMinute,
+    this.byHour,
+    this.byWeekDay,
+    this.byYearDay,
+    this.byWeek,
+    this.byMonth,
+    this.byMonthDay,
+    int? startOfWorkWeek,
+    this.bySetPos,
+  })
+    */
+    return Scaffold(
+        appBar: AppBar(
+          leading: BackButton(onPressed: () {
+            Navigator.maybePop(
+                context,
+                true
+                    ? null
+                    : {
+                        "item": this.widget.item,
+                        "icalendar": todoComp.parent!,
+                        "itemContent": this.widget.itemMap["itemContent"],
+                        "itemIsDeleted": this.widget.itemMap["itemIsDeleted"],
+                        "itemUid": this.widget.itemMap["itemUid"],
+                        "todo": todoComp
+                      });
+          }),
+          // TRY THIS: Try changing the color here to a specific color (to
+          // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
+          // change color while the other colors stay the same.
+          backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+          // Here we take the value from the MyHomePage object that was created by
+          // the App.build method, and use it to set our appbar title.
+          title: const Text("Item view"),
+        ),
+        body: Center(
+          child: Column(
+            children: [
+              Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    IconButton(
+                        tooltip: "RAW Content",
+                        onPressed: () async {
+                          await showDialog(
+                            context: context,
+                            builder: (BuildContext context) => AlertDialog(
+                                title: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.center,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Text("Item UID: "),
+                                      SelectableText(
+                                        this.widget.itemMap["itemUid"],
+                                      ),
+                                    ]),
+                                content: SingleChildScrollView(
+                                    child: Text(todoComp.parent!.toString()))),
+                          );
+                        },
+                        icon: Icon(Icons.data_exploration)),
+                    IconButton(
+                        tooltip: "Revisions",
+                        onPressed: () async {
+                          final itemRevisionListResponse = await this
+                              .widget
+                              .itemManager
+                              .itemRevisions(this.widget.item);
+                          final eteItemRevisionList = <RevisionItemWrapper>[];
+                          for (var element
+                              in await itemRevisionListResponse.getData()) {
+                            eteItemRevisionList.add(RevisionItemWrapper(
+                                revision: element,
+                                mtime: (await element.getMeta()).mtime));
+                          }
+
+                          if (context.mounted) {
+                            final action = await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (BuildContext context) =>
+                                        RevisionStatefulWidget(
+                                            revisions: eteItemRevisionList)));
+                            if (action != null &&
+                                action is RevisionItemWrapper) {
+                              final revisionCalendar = VComponent.parse(
+                                      utf8.decode(
+                                          await action.revision.getContent()))
+                                  as VCalendar;
+                              revisionCalendar.todo!.sequence =
+                                  (revisionCalendar.todo!.sequence ?? 0) + 1;
+                              final revisionClone =
+                                  await action.revision.clone();
+                              await revisionClone.setContent(
+                                  utf8.encode(revisionCalendar.toString())
+                                      as Uint8List);
+                              final revisionMetaClone =
+                                  (await revisionClone.getMeta())
+                                      .copyWith(mtime: DateTime.now());
+                              await revisionClone.setMeta(revisionMetaClone);
+                              await this
+                                  .widget
+                                  .itemManager
+                                  .batch([revisionClone]);
+                              final itemUpdatedFromServer = await this
+                                  .widget
+                                  .itemManager
+                                  .fetch(this.widget.itemMap["itemUid"]);
+
+                              final updatedItemContent =
+                                  await itemUpdatedFromServer.getContent();
+                              final updateVCalendar = VComponent.parse(
+                                  utf8.decode(updatedItemContent)) as VCalendar;
+                              final sendingToNavigator = {
+                                "item": itemUpdatedFromServer,
+                                "icalendar": itemUpdatedFromServer,
+                                "itemContent": updatedItemContent,
+                                "itemIsDeleted":
+                                    await itemUpdatedFromServer.isDeleted(),
+                                "itemUid": await itemUpdatedFromServer.getUid(),
+                                "todo": updateVCalendar.todo!,
+                              };
+                              if (context.mounted) {
+                                Navigator.maybePop(context, sendingToNavigator);
+                              }
+                            }
+                          }
+                        },
+                        icon: const Icon(Icons.history)),
+                  ]),
+              Form(
+                  key: _formKey,
+                  child: Column(children: [
+                    TextFormField(
+                      controller: summaryController,
+                      validator: (String? value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter some text';
+                        }
+                        return null;
+                      },
+                      decoration: const InputDecoration(labelText: "Summary"),
+                      onChanged: (val) {},
+                    ),
+                    DropdownButtonFormField(
+                      items: Priority.values
+                          .map((e) => DropdownMenuItem(
+                                value: e,
+                                child: Text(e.name),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() {
+                            _priority = value;
+                          });
+                        }
+                      },
+                      decoration: const InputDecoration(labelText: "Priority"),
+                      value: _priority,
+                    ),
+                    DropdownButtonFormField(
+                      items: TodoStatus.values
+                          .map((e) => DropdownMenuItem(
+                                value: e,
+                                child: Text(e.name),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() {
+                            _status = value;
+                          });
+                        }
+                      },
+                      validator: (TodoStatus? value) {
+                        if (value == null) {
+                          return "can't empty";
+                        } else {
+                          return null;
+                        }
+                      },
+                      decoration: const InputDecoration(labelText: "Status"),
+                      value: _status,
+                    ),
+                    DateTimeField(
+                      format: DateFormat("yyyy-MM-dd HH:mm"),
+                      decoration:
+                          const InputDecoration(labelText: "Start date"),
+                      initialValue: todoComp.start,
+                      controller: startController,
+                      onShowPicker: (context, currentValue) async {
+                        return await showDatePicker(
+                          context: context,
+                          firstDate: DateTime(2000),
+                          initialDate: currentValue ?? DateTime.now(),
+                          lastDate: DateTime(2100),
+                        ).then((DateTime? date) async {
+                          if (date != null) {
+                            final time = await showTimePicker(
+                              context: context,
+                              initialTime: TimeOfDay.fromDateTime(
+                                  currentValue ?? DateTime.now()),
+                            );
+                            return DateTimeField.combine(date, time);
+                          } else {
+                            return currentValue;
+                          }
+                        });
+                      },
+                    ),
+                    DateTimeField(
+                      format: DateFormat("yyyy-MM-dd HH:mm"),
+                      decoration: const InputDecoration(labelText: "Due date"),
+                      initialValue: todoComp.due,
+                      controller: dueController,
+                      onShowPicker: (context, currentValue) async {
+                        return await showDatePicker(
+                          context: context,
+                          firstDate: DateTime(2000),
+                          initialDate: currentValue ?? DateTime.now(),
+                          lastDate: DateTime(2100),
+                        ).then((DateTime? date) async {
+                          if (date != null) {
+                            final time = await showTimePicker(
+                              context: context,
+                              initialTime: TimeOfDay.fromDateTime(
+                                  currentValue ?? DateTime.now()),
+                            );
+                            return DateTimeField.combine(date, time);
+                          } else {
+                            return currentValue;
+                          }
+                        });
+                      },
+                    ),
+                    TextFormField(
+                      controller: descriptionController,
+                      initialValue: descriptionController != null
+                          ? null
+                          : this.widget.icalendar.description,
+                      validator: (String? value) {
+                        // if (value == null || value.isEmpty) {
+                        //   return 'Please enter some text';
+                        // }
+                        return null;
+                      },
+                      decoration:
+                          const InputDecoration(labelText: "Description"),
+                      onChanged: (val) {},
+                    ),
+                    TextFormField(
+                      controller: recurrenceRuleController,
+                      decoration: const InputDecoration(labelText: "RRULE"),
+                    ),
+                    ElevatedButton(
+                      child: const Text('RRULE Open'),
+                      onPressed: () {
+                        showDialog(
+                          context: context,
+                          builder: (BuildContext context) => AlertDialog(
+                            content: SingleChildScrollView(
+                              child: RRuleGenerator(
+                                config: RRuleGeneratorConfig(),
+                                initialRRule: recurrenceRuleController.text,
+                                textDelegate: const EnglishRRuleTextDelegate(),
+                                onChange: (value) {
+                                  recurrenceRuleController.text =
+                                      value.startsWith("RRULE:")
+                                          ? value.replaceFirst("RRULE:", "")
+                                          : value;
+                                },
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                    Column(children: [
+                      ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: alarms.length,
+                          itemBuilder: (BuildContext context, int index) {
+                            return ListTile(
+                              title: TextFormField(
+                                initialValue: alarms[index]
+                                        .triggerRelativeDuration
+                                        ?.toString() ??
+                                    alarms[index]
+                                        .triggerDate
+                                        ?.toIso8601String() ??
+                                    "",
+                                validator: (value) {
+                                  try {
+                                    if (value == null || value == "") {
+                                      return 'Cannot be blank';
+                                    }
+                                    IsoDuration.parse(value);
+                                  } on FormatException {
+                                    return 'Not a valid ISO duration';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              /*subtitle: TextFormField(initialValue: alarms[index].repeat.toString(),
+                    keyboardType: TextInputType.number,
+                    validator: (value) {
+                      if (value == null || value == "" || int.tryParse(value) == null || (int.tryParse(value)! < 0)) {
+                        return 'Must be non-negative number';
+                      } else {
+                        return null;
+                      }
+                      
+                }, decoration: InputDecoration(labelText: "Alarm action repeat"), onChanged: (value) {
+                  if (alarms[index] != null && int.tryParse(value) != null && int.tryParse(value)! >= 0) {
+                    alarms[index].repeat = int.parse(value);
+                    }
+              },),*/
+                            );
+                          }),
+                    ]),
+                    TextButton(
+                        onPressed: () async {
+                          if (_formKey.currentState!.validate()) {
+//                                  final itemUid = await this.widget.item.getUid();
+                            debugPrint(
+                                "etag: ${await this.widget.item.getEtag()}");
+                            final itemClone = await this.widget.item.clone();
+                            debugPrint(
+                                "etag itemClone: ${await itemClone.getEtag()}");
+                            bool sequenceChange = false;
+                            /*
+                            
+                            sequence must change if:
+                            o  "DTSTART"
+                            
+                            o  "DTEND"
+                            
+                            o  "DURATION"
+                            
+                            o  "DUE"
+                            
+                            o  "RRULE"
+                            
+                            o  "RDATE"
+                            
+                            o  "EXDATE"
+                            
+                            o  "STATUS"
+                            */
+                            bool statusChanged = false;
+                            if (_status != todoComp.status) {
+                              todoComp.status = _status;
+                              sequenceChange = true;
+                              statusChanged = true;
+                            }
+                            if (_priority != todoComp.priority) {
+                              todoComp.priority = _priority;
+                            }
+                            if (todoComp.summary != summaryController.text) {
+                              todoComp.summary = summaryController.text;
+                            }
+                            if (todoComp.description !=
+                                descriptionController.text) {
+                              todoComp.description = descriptionController.text;
+                            }
+
+                            todoComp.lastModified = DateTime.now();
+                            final updatedRecurrenceRule =
+                                recurrenceRuleController.text.isNotEmpty
+                                    ? Recurrence.parse(
+                                        recurrenceRuleController.text)
+                                    : null;
+                            if (todoComp.recurrenceRule !=
+                                updatedRecurrenceRule) {
+                              todoComp.recurrenceRule = updatedRecurrenceRule;
+                              sequenceChange = true;
+                              //if (statusChanged) {
+                              //  todoComp.recurrenceId = todoComp.start;
+                              //}
+                            }
+                            //if (todoComp.recurrenceRule != null && statusChanged) {
+                            //todoComp.recurrenceId = todoComp.start;
+                            // }
+                            final updatedStart =
+                                DateTime.tryParse(startController.text);
+                            final updatedDue =
+                                DateTime.tryParse(dueController.text);
+
+                            if ((updatedDue != null && todoComp.due == null) ||
+                                (updatedDue == null && todoComp.due != null)) {
+                              todoComp.due = updatedDue;
+                              sequenceChange = true;
+                            } else if (todoComp.due != null &&
+                                updatedDue != null &&
+                                todoComp.due!.compareTo(updatedDue) != 0) {
+                              todoComp.due = updatedDue;
+                              sequenceChange = true;
+                            }
+                            if ((updatedStart != null &&
+                                    todoComp.start == null) ||
+                                (updatedStart == null &&
+                                    todoComp.start != null)) {
+                              todoComp.start = updatedStart;
+                              sequenceChange = true;
+                            } else if (todoComp.start != null &&
+                                updatedStart != null &&
+                                todoComp.start!.compareTo(updatedStart) != 0) {
+                              todoComp.start = updatedStart;
+                              sequenceChange = true;
+                            }
+
+                            if (sequenceChange) {
+                              todoComp.sequence = (todoComp.sequence ?? 0) + 1;
+                            }
+                            final nextTodo = (statusChanged &&
+                                    (todoComp.status == TodoStatus.completed ||
+                                        todoComp.status ==
+                                            TodoStatus.cancelled))
+                                ? getNextOccurrence(
+                                    todoComp, todoComp.recurrenceRule)
+                                : todoComp;
+
+                            final actualNextTodo = nextTodo ?? todoComp;
+                            actualNextTodo.checkValidity();
+                            final itemMetaClone = (await itemClone.getMeta())
+                                .copyWith(
+                                    mtime: nextTodo?.lastModified ??
+                                        todoComp.lastModified);
+                            await itemClone.setMeta(itemMetaClone);
+                            if (kDebugMode) {
+                              print("--------BEGIN Intended changes---------");
+                              print(actualNextTodo.parent!.toString());
+                              print("--------END Intended changes-----------");
+                            }
+                            await itemClone.setContent(
+                                utf8.encode(actualNextTodo.parent!.toString()));
+                            try {
+                              await this
+                                  .widget
+                                  .itemManager
+                                  .transaction([itemClone]);
+                            } on EtebaseException catch (error, stackTrace) {
+                              if (kDebugMode) {
+                                print(error);
+                                print(stackTrace);
+                              }
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context)
+                                    .showSnackBar(SnackBar(
+                                  content: Text(error.message),
+                                  duration: const Duration(seconds: 5),
+                                  action: SnackBarAction(
+                                    label: 'OK',
+                                    onPressed: () async {
+                                      if (error.code ==
+                                          EtebaseErrorCode.conflict) {
+                                        final itemUpdatedFromServer = await this
+                                            .widget
+                                            .itemManager
+                                            .fetch(
+                                                this.widget.itemMap["itemUid"]);
+                                        await this.widget.item.setContent(
+                                            await itemUpdatedFromServer
+                                                .getContent());
+                                        final contentFromServer =
+                                            await this.widget.item.getContent();
+                                        final iCalendarFromServer =
+                                            VComponent.parse(utf8
+                                                    .decode(contentFromServer))
+                                                as VCalendar;
+                                        debugPrint(
+                                            "------ BEGIN server data ---------");
+                                        debugPrint(
+                                            iCalendarFromServer.toString());
+                                        debugPrint(
+                                            "----- END server data -----------");
+                                        if (kDebugMode) {
+                                          print(actualNextTodo.parent!
+                                              .toString()
+                                              .compareTo(iCalendarFromServer
+                                                  .toString()));
+                                        }
+                                        final todoFromServer =
+                                            iCalendarFromServer.todo!;
+                                        await this.widget.item.setMeta(
+                                            await itemUpdatedFromServer
+                                                .getMeta());
+                                        if (await itemUpdatedFromServer
+                                            .isDeleted()) {
+                                          await this.widget.item.delete();
+                                        }
+
+                                        setState(() {
+                                          this.widget.itemMap["itemContent"] =
+                                              contentFromServer;
+                                          descriptionController.text =
+                                              todoFromServer.description ?? "";
+                                          summaryController.text =
+                                              todoFromServer.summary ?? "";
+                                        });
+                                      }
+                                      if (context.mounted) {
+                                        ScaffoldMessenger.of(context)
+                                            .hideCurrentSnackBar();
+                                      }
+                                    },
+                                  ),
+                                ));
+                              }
+                              return;
+                            }
+                            final itemUpdatedFromServer = await this
+                                .widget
+                                .itemManager
+                                .fetch(this.widget.itemMap["itemUid"]);
+
+                            final username = getUsernameInCacheDir();
+
+                            final cacheClient =
+                                await EtebaseFileSystemCache.create(
+                                    this.widget.client, cacheDir, username);
+                            final colUid = getCollectionUIDInCacheDir();
+                            await cacheClient.itemSet(this.widget.itemManager,
+                                colUid, itemUpdatedFromServer);
+                            await cacheClient.dispose();
+                            debugPrint(
+                                "etag from server: ${await itemUpdatedFromServer.getEtag()}");
+                            await this.widget.item.setContent(
+                                await itemUpdatedFromServer.getContent());
+                            await this
+                                .widget
+                                .item
+                                .setMeta(await itemUpdatedFromServer.getMeta());
+
+                            if (await itemUpdatedFromServer.isDeleted()) {
+                              await this.widget.item.delete();
+                            }
+
+                            final possiblyChangedItemMapData = {
+                              "itemContent":
+                                  await this.widget.item.getContent(),
+                              "itemUid": await this.widget.item.getUid(),
+                              "itemIsDeleted":
+                                  await this.widget.item.isDeleted()
+                            };
+                            this
+                                .widget
+                                .itemMap
+                                .addAll(possiblyChangedItemMapData);
+
+                            final updatedItemContent =
+                                await itemUpdatedFromServer.getContent();
+                            final updateVCalendar = VComponent.parse(
+                                utf8.decode(updatedItemContent)) as VCalendar;
+                            final sendingToNavigator = {
+                              "item": itemUpdatedFromServer,
+                              "icalendar": itemUpdatedFromServer,
+                              "itemContent": updatedItemContent,
+                              "itemIsDeleted":
+                                  await itemUpdatedFromServer.isDeleted(),
+                              "itemUid": await itemUpdatedFromServer.getUid(),
+                              "todo": updateVCalendar.todo!,
+                            };
+                            if (context.mounted) {
+                              Navigator.maybePop(context, sendingToNavigator);
+                            }
+                          }
+                        },
+                        child: const Text("save")),
+                    const Divider(height: 50),
+                    IconButton(
+                        onPressed: () async {
+                          final action = await showDialog(
+                              context: context,
+                              builder: (BuildContext context) {
+                                return AlertDialog(
+                                  title: const Text('Delete todo'),
+                                  content: const Text(
+                                      'Would you like to delete this todo?'),
+                                  actions: <Widget>[
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, 'Cancel'),
+                                      child: const Text('Cancel'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, 'OK'),
+                                      child: const Text('OK'),
+                                    ),
+                                  ],
+                                );
+                              });
+                          if (action == "OK") {
+                            await this.widget.item.delete();
+                            await this
+                                .widget
+                                .itemManager
+                                .transaction([this.widget.item]);
+                            setState(() {
+                              wasEdited = true;
+                            });
+                            final itemUpdatedFromServer = await this
+                                .widget
+                                .itemManager
+                                .fetch((await this.widget.item.getUid()));
+
+                            final username = getUsernameInCacheDir();
+
+                            final cacheClient =
+                                await EtebaseFileSystemCache.create(
+                                    this.widget.client, cacheDir, username);
+                            final colUid = getCollectionUIDInCacheDir();
+                            await cacheClient.itemSet(this.widget.itemManager,
+                                colUid, itemUpdatedFromServer);
+                            await cacheClient.dispose();
+
+                            final updatedItemContent =
+                                await itemUpdatedFromServer.getContent();
+                            final updateVCalendar = VComponent.parse(
+                                utf8.decode(updatedItemContent)) as VCalendar;
+                            final sendingToNavigator = {
+                              "item": itemUpdatedFromServer,
+                              "icalendar": itemUpdatedFromServer,
+                              "itemContent": updatedItemContent,
+                              "itemIsDeleted":
+                                  await itemUpdatedFromServer.isDeleted(),
+                              "itemUid": await itemUpdatedFromServer.getUid(),
+                              "todo": updateVCalendar.todo!,
+                            };
+                            if (context.mounted) {
+                              await Navigator.maybePop(
+                                  context, sendingToNavigator);
+                            }
+                          }
+                        },
+                        icon: const Icon(Icons.delete)),
+                  ])),
+            ],
+          ),
+        ));
+  }
+}
+
+class RevisionItemWrapper {
+  final EtebaseItem revision;
+  final DateTime? mtime;
+
+  RevisionItemWrapper({
+    required this.revision,
+    required this.mtime,
+  });
+}
+
+class RevisionStatefulWidget extends StatefulWidget {
+  final List<RevisionItemWrapper> revisions;
+
+  const RevisionStatefulWidget({super.key, required this.revisions});
+  @override
+  State<StatefulWidget> createState() => _RevisionStatefulWidgetState();
+}
+
+class _RevisionStatefulWidgetState extends State<RevisionStatefulWidget> {
+  @override
+  Widget build(BuildContext context) {
+    final revisionChildren = <Widget>[];
+    for (var element in this.widget.revisions) {
+      final elementWidget = ListTile(
+          title: Text(element.mtime!.toString()),
+          onTap: () async {
+            final elementContent = await element.revision.getContent();
+            RevisionItemWrapper? action;
+            if (context.mounted) {
+              action = await showDialog(
+                  context: context,
+                  builder: (BuildContext context) => AlertDialog(
+                        icon: const CloseButton(),
+                        title: Text(element.mtime!.toIso8601String()),
+                        content: SelectableText(
+                            (VComponent.parse(utf8.decode(elementContent))
+                                    as VCalendar)
+                                .toString()),
+                        actions: [
+                          TextButton(
+                            child: const Text('Close'),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                          TextButton(
+                              child: const Text("Restore State"),
+                              onPressed: () {
+                                if (mounted) {
+                                  Navigator.pop(context, element);
+                                }
+                              })
+                        ],
+                      ));
+            }
+            if (action != null) {
+              if (context.mounted) {
+                Navigator.pop(context, action);
+              }
+            }
+          });
+      revisionChildren.add(elementWidget);
+    }
+
+    return Scaffold(
+      appBar: AppBar(title: const Text("Revisions")),
+      body: SingleChildScrollView(
+          child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: revisionChildren)),
+    );
+  }
+}
