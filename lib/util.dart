@@ -1,19 +1,33 @@
+import 'dart:convert';
 import 'dart:io';
-
+import 'dart:developer' as dev;
+import 'dart:typed_data';
 import 'package:enough_icalendar/enough_icalendar.dart';
 import 'package:etebase_flutter/etebase_flutter.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:logging/logging.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:rrule/rrule.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-String cacheDir = "${Directory.current.path}/ete_sync_fs_cache";
+Future<String> getCacheDir() async {
+  final value =
+      "${(await getApplicationSupportDirectory()).path}/ete_sync_fs_cache";
+  return value;
+}
 
-String getUsernameInCacheDir() {
-  final userNames = Directory(cacheDir).listSync().map((e) => e.path).toList();
+//String cacheDir = "${Directory.current.path}/ete_sync_fs_cache";
+
+const eteCacheAccountEncryptionKeyString = "eteCacheAccountEncryptionKey";
+
+Future<String> getUsernameInCacheDir() async {
+  final userNames =
+      Directory(await getCacheDir()).listSync().map((e) => e.path).toList();
   late final String username;
   if (userNames.length == 1) {
     username = userNames.first.split("/").last;
+  } else if (userNames.isEmpty) {
+    throw Exception("No usernames in the cache.");
   } else {
     throw Exception("More than one username in the cache");
   }
@@ -21,8 +35,9 @@ String getUsernameInCacheDir() {
   return username;
 }
 
-String getCollectionUIDInCacheDir() {
-  final username = getUsernameInCacheDir();
+Future<String> getCollectionUIDInCacheDir() async {
+  final cacheDir = (await getCacheDir());
+  final username = await getUsernameInCacheDir();
   final collectionUIDNames = Directory("$cacheDir/$username/cols/").listSync();
   if (collectionUIDNames.isEmpty) {
     throw Exception("No collections in cache dir.");
@@ -30,56 +45,150 @@ String getCollectionUIDInCacheDir() {
   if (collectionUIDNames.length == 1) {
     return collectionUIDNames.first.path.split("/").last;
   } else {
+    final activeCollectionFile = File("$cacheDir/$username/.activeCollection");
+    if (activeCollectionFile.existsSync()) {
+      final activeCollectionName =
+          activeCollectionFile.readAsStringSync().replaceAll("\n", "");
+      if (collectionUIDNames
+          .map((e) => e.path.split("/").last)
+          .contains(activeCollectionName)) {
+        return activeCollectionName;
+      } else {
+        throw Exception(
+            "Active collection name in user's cache dir does not exist in the user's collection list in cache.");
+      }
+    }
     throw Exception("Too many collections to naively pick.");
   }
 }
 
+Future<Uri?> getServerUri() async {
+  final Future<SharedPreferences> prefsInstance =
+      SharedPreferences.getInstance();
+  final SharedPreferences prefs = await prefsInstance;
+  final eteBaseUrlRawString = prefs.getString("ete_base_url");
+  final serverUri =
+      eteBaseUrlRawString != null ? Uri.tryParse(eteBaseUrlRawString) : null;
+  return serverUri;
+}
+
 Future<EtebaseClient> getEtebaseClient() async {
-  final client = await EtebaseClient.create(
-      'my-client',
-      Uri(
-          scheme: "https",
-          host: dotenv.env["ete_base_url_host"],
-          port: int.parse(dotenv.env["ete_base_url_port"]!)));
+  final Future<SharedPreferences> prefsInstance =
+      SharedPreferences.getInstance();
+  final SharedPreferences prefs = await prefsInstance;
+  final eteBaseUrlRawString = prefs.getString("ete_base_url");
+  final serverUri =
+      eteBaseUrlRawString != null ? Uri.tryParse(eteBaseUrlRawString) : null;
+  final client = await EtebaseClient.create('my-client', serverUri);
   return client;
+}
+
+Future<List> getItemManager() async {
+  Uri? serverUri = await getServerUri();
+
+  late final EtebaseClient client;
+  try {
+    client = await getEtebaseClient();
+  } on EtebaseException catch (e) {
+    if (e.code == EtebaseErrorCode.urlParse) {
+      return [null, null, null, null, serverUri];
+    }
+    rethrow;
+  }
+
+  final cacheDir = await getCacheDir();
+
+  if (!Directory(cacheDir).existsSync()) {
+    return [client, null, null, null, serverUri];
+  }
+
+  late final String username;
+  try {
+    username = await getUsernameInCacheDir();
+  } catch (error) {
+    return [client, null, null, null, serverUri];
+  }
+  print("got username");
+
+  const secureStorage = FlutterSecureStorage();
+
+  final eteCacheAccountEncryptionKey = await secureStorage
+          .read(key: eteCacheAccountEncryptionKeyString)
+          .then((value) => value != null ? base64Decode(value) : value)
+      as Uint8List?;
+
+  final cacheClient =
+      await EtebaseFileSystemCache.create(client, cacheDir, username);
+
+  late final EtebaseAccount etebase;
+  try {
+    etebase =
+        await cacheClient.loadAccount(client, eteCacheAccountEncryptionKey);
+  } catch (error) {
+    return [client, null, null, null, serverUri];
+  }
+  final collUid = await getCollectionUIDInCacheDir();
+
+  final collectionManager = await etebase.getCollectionManager();
+  final collection = await collectionManager.fetch(collUid);
+  await cacheClient.collectionSet(collectionManager, collection);
+
+  final itemManager = await collectionManager.getItemManager(collection);
+  await cacheClient.dispose();
+  return [
+    client,
+    itemManager,
+    collUid,
+    (await collection.getMeta()).name,
+    serverUri
+  ];
 }
 
 Future<Map<String, dynamic>> getItemListResponse(
     EtebaseItemManager itemManager, EtebaseClient client, String colUid) async {
+  print("passed in colUid: ${colUid}");
   bool done = false;
   String? stoken;
-
   Map<String, dynamic> theMap = {};
 
-  final username = getUsernameInCacheDir();
+  final username = await getUsernameInCacheDir();
+  final cacheDir = await getCacheDir();
 
   final cacheClient =
       await EtebaseFileSystemCache.create(client, cacheDir, username);
-  final etebase = await cacheClient.loadAccount(client);
-  final collUid = getCollectionUIDInCacheDir();
+  const secureStorage = FlutterSecureStorage();
+
+  final eteCacheAccountEncryptionKey = await secureStorage
+          .read(key: eteCacheAccountEncryptionKeyString)
+          .then((value) => value != null ? base64Decode(value) : value)
+      as Uint8List?;
+
+  final etebase =
+      await cacheClient.loadAccount(client, eteCacheAccountEncryptionKey);
+  final collUid = await getCollectionUIDInCacheDir();
   final collectionManager = await etebase.getCollectionManager();
 
-  final collection =
-      await cacheClient.collectionGet(collectionManager, collUid);
-
-  final collectionSToken = await collection.getStoken();
-  if (collectionSToken != null) {
-    await cacheClient.collectionSaveStoken(colUid, collectionSToken);
+  late final EtebaseCollection collection;
+  try {
+    collection = await cacheClient.collectionGet(collectionManager, collUid);
+  } catch (e) {
+    collection = await collectionManager.fetch(colUid);
+    await cacheClient.collectionSet(collectionManager, collection);
   }
+
   final cacheItemManager = await collectionManager.getItemManager(collection);
   theMap["itemManager"] = cacheItemManager;
-  stoken = await cacheClient.loadStoken();
-  final itemsAtCollPath = Directory(cacheDir +
-          "/" +
-          username +
-          "/" +
-          "cols" +
-          "/" +
-          collUid +
-          "/" +
-          "items")
-      .listSync()
-      .toList();
+  theMap["username"] = username;
+  theMap["cacheDir"] = cacheDir;
+  stoken = await cacheClient.collectionLoadStoken(colUid);
+  final itemsAtCollPath =
+      Directory("$cacheDir/$username/cols/$collUid/items").listSync().toList();
+
+  dev.log(
+      "number of cached items in collection `$collUid`: ${itemsAtCollPath.length}",
+      name: "ete_sync_app",
+      time: DateTime.now(),
+      level: Level.CONFIG.value);
 
   theMap["items"] = <EtebaseItem, Map<String, dynamic>>{};
   for (var cachedItemUID in itemsAtCollPath.map((e) => e.path)) {
@@ -90,9 +199,23 @@ Future<Map<String, dynamic>> getItemListResponse(
       "itemContent": await item.getContent()
     };
   }
+
   while (!done) {
-    EtebaseItemListResponse rawItemList =
-        await itemManager.list(EtebaseFetchOptions(stoken: stoken, limit: 50));
+    late final EtebaseItemListResponse rawItemList;
+
+    try {
+      rawItemList = await itemManager.list(EtebaseFetchOptions(
+          stoken: theMap["items"].isNotEmpty ? stoken : null, limit: 50));
+    } on EtebaseException catch (e) {
+      switch (e.code) {
+        case EtebaseErrorCode.generic:
+          if (e.message == "operation timed out") {
+            continue;
+          }
+        default:
+          rethrow;
+      }
+    }
     List<EtebaseItem> itemList = await (rawItemList).getData();
     stoken = await rawItemList.getStoken();
     done = await rawItemList.isDone();
@@ -115,39 +238,101 @@ Future<Map<String, dynamic>> getItemListResponse(
     }
   }
   if (stoken != null) {
-    await cacheClient.saveStoken(stoken);
+    await cacheClient.collectionSaveStoken(colUid, stoken);
   }
 
   return theMap;
 }
 
+Future<Map<String, dynamic>> getCollections(EtebaseClient client,
+    {EtebaseAccount? etebaseAccount}) async {
+  final username = await getUsernameInCacheDir();
+  final cacheDir = await getCacheDir();
+  final cacheClient =
+      await EtebaseFileSystemCache.create(client, cacheDir, username);
+  const secureStorage = FlutterSecureStorage();
+
+  final eteCacheAccountEncryptionKey = etebaseAccount == null
+      ? await secureStorage
+              .read(key: eteCacheAccountEncryptionKeyString)
+              .then((value) => value != null ? base64Decode(value) : value)
+          as Uint8List?
+      : null;
+
+  final etebase = etebaseAccount ??
+      await cacheClient.loadAccount(client, eteCacheAccountEncryptionKey);
+
+  String? stoken = await cacheClient.loadStoken();
+
+  final collManager = await etebase.getCollectionManager();
+
+  Map<String, dynamic> theMap = {};
+  theMap["items"] = <EtebaseCollection, Map<String, dynamic>>{};
+
+  bool done = false;
+
+  final itemsAtCollPath =
+      Directory("$cacheDir/$username/cols/").listSync().toList();
+
+  for (var cachedItemUID in itemsAtCollPath.map((e) => e.path)) {
+    final item = await cacheClient.collectionGet(collManager, cachedItemUID);
+    theMap["items"][item] = {
+      "itemIsDeleted": await item.isDeleted(),
+      "itemUid": await item.getUid(),
+      "itemContent": await item.getContent(),
+      "itemName": (await item.getMeta()).name,
+      "itemColor": (await item.getMeta()).color,
+    };
+  }
+  while (!done) {
+    EtebaseCollectionListResponse rawItemList = await collManager.list(
+        "etebase.vtodo",
+        EtebaseFetchOptions(
+            stoken: theMap["items"].isNotEmpty ? stoken : null, limit: 50));
+    List<EtebaseCollection> itemList = await rawItemList.getData();
+    stoken = await rawItemList.getStoken();
+    done = await rawItemList.isDone();
+
+    for (final item in itemList) {
+      await cacheClient.collectionSet(collManager, item);
+      final itemUid = await item.getUid();
+      for (final elementKeyInMap
+          in (theMap["items"] as Map<EtebaseCollection, Map<String, dynamic>>)
+              .keys) {
+        if ((await elementKeyInMap.getUid()) == itemUid) {
+          (theMap["items"] as Map).remove(elementKeyInMap);
+          break;
+        }
+      }
+      theMap["items"][item] = {
+        "itemIsDeleted": await item.isDeleted(),
+        "itemUid": await item.getUid(),
+        "itemContent": await item.getContent(),
+        "itemName": (await item.getMeta()).name,
+        "itemColor": (await item.getMeta()).color,
+      };
+    }
+  }
+  if (stoken != null) {
+    await cacheClient.saveStoken(stoken);
+  }
+  return theMap;
+  //return (theMap["items"] as Map<EtebaseCollection, Map<String, dynamic>>)
+  //    .keys
+  //    .toList();
+}
+
 VTodo? getNextOccurrence(VTodo todoComp, Recurrence? recurrenceRule) {
   if (recurrenceRule != null) {
-    Frequency frequencyT = Frequency.secondly;
-    switch (recurrenceRule.frequency) {
-      case RecurrenceFrequency.secondly:
-        frequencyT = Frequency.secondly;
-        break;
-      case RecurrenceFrequency.minutely:
-        frequencyT = Frequency.minutely;
-        break;
-      case RecurrenceFrequency.hourly:
-        frequencyT = Frequency.hourly;
-        break;
-      case RecurrenceFrequency.daily:
-        frequencyT = Frequency.daily;
-        break;
-      case RecurrenceFrequency.weekly:
-        frequencyT = Frequency.weekly;
-        break;
-      case RecurrenceFrequency.monthly:
-        frequencyT = Frequency.monthly;
-        break;
-      case RecurrenceFrequency.yearly:
-        frequencyT = Frequency.yearly;
-        break;
-      default:
-    }
+    final frequencyT = switch (recurrenceRule.frequency) {
+      RecurrenceFrequency.secondly => Frequency.secondly,
+      RecurrenceFrequency.minutely => Frequency.minutely,
+      RecurrenceFrequency.hourly => Frequency.hourly,
+      RecurrenceFrequency.daily => Frequency.daily,
+      RecurrenceFrequency.weekly => Frequency.weekly,
+      RecurrenceFrequency.monthly => Frequency.monthly,
+      RecurrenceFrequency.yearly => Frequency.yearly,
+    };
     if (recurrenceRule.count != null && recurrenceRule.count! <= 1) {
       return null; // end of reccurence
     } else {
@@ -173,8 +358,7 @@ VTodo? getNextOccurrence(VTodo todoComp, Recurrence? recurrenceRule) {
       DateTime? nextInstance;
       while (instances.moveNext()) {
         final instance = instances.current;
-        if (instance.compareTo(DateTime.now().toUtc()) == 1 &&
-            instance.compareTo(instancesStart) == 1) {
+        if (instance.compareTo(instancesStart) == 1) {
           nextInstance = instance;
           break;
         }
@@ -186,7 +370,7 @@ VTodo? getNextOccurrence(VTodo todoComp, Recurrence? recurrenceRule) {
           final offset = todoComp.due!.difference(todoComp.start!);
           nextDueDate = nextDueDate.add(offset);
         }
-        final nextTodo = todoComp as VTodo;
+        final nextTodo = todoComp;
 
         //nextTodo.uid = (const Uuid()).v4();
         if (nextStartDate != null) {

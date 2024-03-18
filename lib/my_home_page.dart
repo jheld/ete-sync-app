@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
-import 'package:datetime_picker_formfield_new/datetime_picker_formfield.dart';
+import 'dart:io';
+import 'package:auto_direction/auto_direction.dart';
 import 'package:enough_icalendar/enough_icalendar.dart';
 import 'package:ete_sync_app/etebase_item_route.dart';
 import 'package:ete_sync_app/i_calendar_custom_parser.dart';
@@ -7,8 +9,186 @@ import 'package:ete_sync_app/util.dart';
 import 'package:etebase_flutter/etebase_flutter.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:intl/intl.dart';
 import 'package:rrule/rrule.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:window_manager/window_manager.dart';
+
+class AccountLoadPage extends StatefulWidget {
+  const AccountLoadPage({super.key, required this.client, this.serverUri});
+
+  final EtebaseClient client;
+  final Uri? serverUri;
+
+  @override
+  State<StatefulWidget> createState() => _AccountLoadPageState();
+}
+
+class _AccountLoadPageState extends State<AccountLoadPage> {
+  final _formKey = GlobalKey<FormState>();
+  final usernameController = TextEditingController();
+  final passwordController = TextEditingController();
+  final serverUrlController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    serverUrlController.text = widget.serverUri?.toString() ?? "";
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+        appBar: AppBar(),
+        body: Column(children: [
+          Form(
+              key: _formKey,
+              child: Column(children: [
+                TextFormField(
+                  controller: serverUrlController,
+                  decoration: const InputDecoration(labelText: "Server URL"),
+                  validator: (value) {
+                    if (value == null || Uri.tryParse(value) == null) {
+                      return "Not a valid URL.";
+                    }
+                    return null;
+                  },
+                ),
+                TextFormField(
+                  controller: usernameController,
+                  decoration: const InputDecoration(labelText: "Username"),
+                ),
+                TextFormField(
+                  controller: passwordController,
+                  decoration: const InputDecoration(labelText: "Password"),
+                  obscureText: true,
+                ),
+                TextButton(
+                    onPressed: () async {
+                      if (_formKey.currentState!.validate()) {
+                        final client = await EtebaseClient.create(
+                            "ete_sync_client",
+                            Uri.parse(serverUrlController.text));
+                        final Future<SharedPreferences> prefsInstance =
+                            SharedPreferences.getInstance();
+                        final SharedPreferences prefs = await prefsInstance;
+                        await prefs.setString("ete_base_url",
+                            Uri.parse(serverUrlController.text).toString());
+
+                        //final client = widget.client;
+                        late final EtebaseAccount etebase;
+                        try {
+                          etebase = await EtebaseAccount.login(client,
+                              usernameController.text, passwordController.text);
+                        } on EtebaseException catch (e) {
+                          if (kDebugMode) {
+                            print(e);
+                          }
+                          _formKey.currentState!.reset();
+                          return;
+                          //if (e.code == EtebaseErrorCode.unauthorized) {}
+                        }
+
+                        final username = usernameController.text;
+                        final cacheDir = await getCacheDir();
+
+                        final cacheClient = await EtebaseFileSystemCache.create(
+                            client, cacheDir, username);
+                        const secureStorage = FlutterSecureStorage();
+                        final eteCacheAccountEncryptionValue =
+                            await EtebaseUtils.randombytes(client, 32);
+
+                        await secureStorage.write(
+                            key: eteCacheAccountEncryptionKeyString,
+                            value:
+                                base64Encode(eteCacheAccountEncryptionValue));
+
+                        await cacheClient.saveAccount(
+                            etebase, eteCacheAccountEncryptionValue);
+
+                        final collectionMap = await getCollections(client,
+                            etebaseAccount: etebase);
+
+                        if (collectionMap["items"].isEmpty) {
+                          await etebase.logout();
+                        } else if (context.mounted) {
+                          final collectionUid = await showDialog(
+                              context: context,
+                              barrierDismissible: false,
+                              builder: (BuildContext context) {
+                                return Dialog(
+                                  child: Column(
+                                      children: (collectionMap["items"] as Map<
+                                              EtebaseCollection,
+                                              Map<String, dynamic>>)
+                                          .values
+                                          .where((element) =>
+                                              !element["itemIsDeleted"])
+                                          .map((element) =>
+                                              buildCollectionListTile(element,
+                                                  cacheDir, username, context))
+                                          .toList()),
+                                );
+                              });
+
+                          final collUid = collectionUid;
+                          final collectionManager =
+                              await etebase.getCollectionManager();
+                          final collection =
+                              await collectionManager.fetch(collUid);
+                          await cacheClient.collectionSet(
+                              collectionManager, collection);
+
+                          final itemManager = await collectionManager
+                              .getItemManager(collection);
+                          final homePageTitle =
+                              (await collection.getMeta()).name;
+                          if (context.mounted) {
+                            Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (BuildContext context) =>
+                                        MyHomePage(
+                                            title: homePageTitle ?? "My Tasks",
+                                            itemManager: itemManager,
+                                            client: widget.client,
+                                            colUid: collUid)));
+                          }
+                        }
+                      }
+                    },
+                    child: const Text("Login"))
+              ])),
+        ]));
+  }
+}
+
+ListTile buildCollectionListTile(Map<String, dynamic> element, String cacheDir,
+    String username, BuildContext context) {
+  return ListTile(
+    title: Text(element["itemName"]),
+    leading: Icon(Icons.square,
+        color: element["itemColor"] != null
+            ? Color.fromRGBO(
+                int.parse((element["itemColor"] as String).substring(1, 3),
+                    radix: 16),
+                int.parse((element["itemColor"] as String).substring(3, 5),
+                    radix: 16),
+                int.parse((element["itemColor"] as String).substring(5, 7),
+                    radix: 16),
+                1.0)
+            : Colors.green),
+    trailing:
+        Tooltip(message: element["itemUid"], child: const Icon(Icons.info)),
+    onTap: () {
+      final activeCollectionFile =
+          File("$cacheDir/$username/.activeCollection");
+      activeCollectionFile.writeAsStringSync(element["itemUid"]);
+      Navigator.maybePop(context, element["itemUid"]);
+    },
+  );
+}
 
 class MyHomePage extends StatefulWidget {
   const MyHomePage(
@@ -36,127 +216,265 @@ class MyHomePage extends StatefulWidget {
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
+class _MyHomePageState extends State<MyHomePage> with WindowListener {
   Future<Map<String, dynamic>>? _itemListResponse;
   String? _searchText;
   DateTime? dateSearchStart;
   DateTime? dateSearchEnd;
   bool todaySearch = true;
   bool showCompleted = false;
+  bool showCanceled = false;
+  DateTime today = DateTime.now();
 
   final _searchTextController = TextEditingController();
   final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey =
       GlobalKey<RefreshIndicatorState>();
 
-  final _selectedTasks = <String>{};
+  final _selectedTasks = <String, ItemMapWrapper>{};
+  final _dateSearchEndController = TextEditingController();
+  final _dateSearchStartController = TextEditingController();
+  Future<Map<String, dynamic>>? collections;
 
   @override
   void dispose() {
-    this.widget.client.dispose();
+    widget.client.dispose();
+    windowManager.removeListener(this);
     super.dispose();
+  }
+
+  @override
+  void onWindowFocus() {
+    final now = DateTime.now();
+    setState(() {
+      if (now.day != today.day) {
+        today = now;
+      }
+    });
   }
 
   @override
   void initState() {
     super.initState();
+    windowManager.addListener(this);
     setState(() {
-      _itemListResponse = getItemListResponse(
-          this.widget.itemManager, this.widget.client, this.widget.colUid);
+      _itemListResponse =
+          getItemListResponse(widget.itemManager, widget.client, widget.colUid);
+      /*dateSearchStart = (dateSearchStart ?? DateTime.now())
+          .copyWith(hour: 0, minute: 0, second: 0);*/
       dateSearchEnd = (dateSearchEnd ?? DateTime.now())
           .copyWith(hour: 23, minute: 59, second: 59);
+      _dateSearchEndController.text =
+          DateFormat("yyyy-MM-dd").format(dateSearchEnd!);
+      // _dateSearchStartController.text =
+      //     DateFormat("yyyy-MM-dd").format(dateSearchStart!);
+      today = DateTime.now();
+      collections = getCollections(widget.client);
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final dateSelectionWidgets = <Widget>[
-      Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const Text("Today"),
-            Switch(
-                value: todaySearch,
-                activeColor:
-                    _searchTextController.text.isNotEmpty ? Colors.grey : null,
-                onChanged: (bool newValue) {
-                  setState(() {
-                    todaySearch = newValue;
-                    if (newValue) {
-                      dateSearchEnd = DateTime.now()
-                          .copyWith(hour: 23, minute: 59, second: 59);
-                      dateSearchStart = DateTime.now()
-                          .copyWith(hour: 0, minute: 0, second: 0);
-                    }
-                  });
-                }),
-            const VerticalDivider()
-          ]),
-      Expanded(
-        //width: max(MediaQuery.sizeOf(context).width / 6, 200),
-        child: DateTimeField(
-          format: DateFormat("yyyy-MM-dd"),
-          enabled: !todaySearch,
-          decoration: const InputDecoration(
-            icon: Icon(Icons.calendar_month),
-            labelText: "Start date range",
-          ),
-          initialValue: (dateSearchStart ?? DateTime.now())
-              .copyWith(hour: 0, minute: 0, second: 0),
-          controller: null,
-          onShowPicker: (context, currentValue) async {
-            return await showDatePicker(
-              context: context,
-              firstDate: DateTime(2000),
-              initialDate: (currentValue ?? DateTime.now())
-                  .copyWith(hour: 0, minute: 0, second: 0),
-              lastDate: DateTime(2100),
-            ).then((value) async => (value ?? DateTime.now())
-                .copyWith(hour: 0, minute: 0, second: 0));
-          },
-          onChanged: (value) {
-            setState(() {
-              dateSearchStart = value?.copyWith(hour: 0, minute: 0, second: 0);
-            });
-          },
-        ),
-      ),
-      Expanded(
-        //width: max(MediaQuery.sizeOf(context).width / 6, 200),
-        child: DateTimeField(
-          format: DateFormat("yyyy-MM-dd"),
-          enabled: !todaySearch,
-          decoration: const InputDecoration(
-              icon: Icon(Icons.calendar_month), labelText: "End date range"),
-          initialValue: (dateSearchEnd ?? DateTime.now())
-              .copyWith(hour: 23, minute: 59, second: 59),
-          controller: null,
-          onShowPicker: (context, currentValue) async {
-            return await showDatePicker(
-              context: context,
-              firstDate: DateTime(2000),
-              initialDate: (currentValue ?? DateTime.now())
-                  .copyWith(hour: 23, minute: 59, second: 59),
-              lastDate: DateTime(2100),
-            ).then((value) async => (value ?? DateTime.now())
-                .copyWith(hour: 23, minute: 59, second: 59));
-          },
-          onChanged: (value) {
-            setState(() {
-              dateSearchEnd = value?.copyWith(hour: 23, minute: 59, second: 59);
-            });
-          },
-        ),
-      ),
-    ];
-
+    List<Widget> dateSelectionWidgets = getDateSelectionWidgets(context);
     return Scaffold(
+      drawer: Drawer(
+          child: ListView(children: [
+        DrawerHeader(
+            child: Column(children: [
+          const Text("Collection List"),
+          TextButton(
+              onPressed: () async {
+                final Future<SharedPreferences> prefsInstance =
+                    SharedPreferences.getInstance();
+                final SharedPreferences prefs = await prefsInstance;
+                final eteBaseUrlRawString = prefs.getString("ete_base_url");
+                final serverUri = eteBaseUrlRawString != null
+                    ? Uri.tryParse(eteBaseUrlRawString)
+                    : null;
+
+                final username = await getUsernameInCacheDir();
+                final cacheDir = getCacheDir();
+                const secureStorage = FlutterSecureStorage();
+
+                final eteCacheAccountEncryptionKey = await secureStorage
+                        .read(key: eteCacheAccountEncryptionKeyString)
+                        .then((value) =>
+                            value != null ? base64Decode(value) : value)
+                    as Uint8List?;
+
+                final cacheClient = await EtebaseFileSystemCache.create(
+                    widget.client, await getCacheDir(), username);
+                final etebase = await cacheClient.loadAccount(
+                    widget.client, eteCacheAccountEncryptionKey);
+                await etebase.logout();
+                await cacheClient.clearUser();
+                if (await Directory("$cacheDir/$username").exists()) {
+                  Directory("$cacheDir/$username").deleteSync(recursive: true);
+                }
+                if (context.mounted) {
+                  Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (BuildContext context) => AccountLoadPage(
+                                client: widget.client,
+                                serverUri: serverUri,
+                              )));
+                }
+              },
+              child: const Text("Sign out")),
+        ])),
+        FutureBuilder<Map<String, dynamic>?>(
+            future: collections,
+            builder: (BuildContext context,
+                AsyncSnapshot<Map<String, dynamic>?> snapshot) {
+              if (snapshot.hasData) {
+                final items = snapshot.data!["items"]
+                    as Map<EtebaseCollection, Map<String, dynamic>>;
+                final collItems = (items.values
+                    .where((element) => !element["itemIsDeleted"])
+                    .map((element) => buildCollectionListTile(
+                        element,
+                        snapshot.data!["cacheDir"]!,
+                        snapshot.data!["username"]!,
+                        context))
+                    .toList());
+                return Column(children: collItems);
+              } else {
+                return const CircularProgressIndicator();
+              }
+            }),
+      ])),
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: Text(widget.title),
         actions: _selectedTasks.isNotEmpty
-            ? [IconButton(onPressed: () {}, icon: const Icon(Icons.snooze))]
+            ? [
+                IconButton(
+                    onPressed: () async {
+                      bool anyWereChanged = false;
+                      final username = await getUsernameInCacheDir();
+                      final cacheClient = await EtebaseFileSystemCache.create(
+                          widget.client, await getCacheDir(), username);
+                      final colUid = await getCollectionUIDInCacheDir();
+                      for (var entry in _selectedTasks.entries) {
+                        final item = entry.value;
+                        final eteItem = item.item;
+                        final icalendar = item.icalendar;
+                        final itemManager = widget.itemManager;
+                        final compTodo = icalendar.todo!;
+                        if ([TodoStatus.completed, TodoStatus.cancelled]
+                            .contains(compTodo.status)) {
+                          return;
+                        }
+                        try {
+                          if (context.mounted) {
+                            await onPressedModifyDueDate(eteItem, icalendar,
+                                    itemManager, compTodo, context)
+                                .then((value) async {
+                              if (value == null) {
+                                return value;
+                              } else {
+                                anyWereChanged = true;
+                              }
+
+                              await cacheClient.itemSet(
+                                  itemManager, colUid, value["item"]);
+
+                              /*(fullSnapshot["items"]! as Map).remove(eteItem);
+                            (fullSnapshot["items"]! as Map)[value["item"]] = {
+                              "itemContent": value["itemContent"],
+                              "itemUid": value["itemUid"],
+                              "itemIsDeleted": value["itemIsDeleted"]
+                            };
+                            setState(() {
+                              _itemListResponse =
+                                  Future<Map<String, dynamic>>.value(
+                                      fullSnapshot);
+                            });*/
+                              return value;
+                            });
+                          }
+                        } on Exception catch (error, stackTrace) {
+                          if (kDebugMode) {
+                            print(stackTrace);
+                            print(error);
+                          }
+
+                          if (error is EtebaseException) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context)
+                                  .showSnackBar(SnackBar(
+                                content: Text(error.message),
+                                duration: const Duration(seconds: 5),
+                                action: SnackBarAction(
+                                  label: 'OK',
+                                  onPressed: () async {
+                                    ScaffoldMessenger.of(context)
+                                        .hideCurrentSnackBar();
+                                  },
+                                ),
+                              ));
+                            }
+                            if (error.code == EtebaseErrorCode.conflict) {
+                              final itemUpdatedFromServer = await itemManager
+                                  .fetch(await eteItem.getUid());
+                              final contentFromServer =
+                                  await itemUpdatedFromServer.getContent();
+                              if (kDebugMode) {
+                                print(
+                                    "------BEGIN returned from server ---------");
+                                print(
+                                    "ETAG: ${await itemUpdatedFromServer.getEtag()}");
+                                print((VComponent.parse(
+                                            utf8.decode(contentFromServer))
+                                        as VCalendar)
+                                    .toString());
+                                print(
+                                    "------END returned from server ---------");
+                              }
+
+                              final username = await getUsernameInCacheDir();
+                              final cacheClient =
+                                  await EtebaseFileSystemCache.create(
+                                      widget.client,
+                                      await getCacheDir(),
+                                      username);
+                              final colUid = await getCollectionUIDInCacheDir();
+                              await cacheClient.itemSet(
+                                  itemManager, colUid, itemUpdatedFromServer);
+                              await cacheClient.dispose();
+                              setState(() {
+                                _itemListResponse = getItemListResponse(
+                                    itemManager, widget.client, colUid);
+                              });
+
+                              /* (fullSnapshot["items"]! as Map).remove(eteItem);
+
+                              (fullSnapshot["items"]!
+                                  as Map)[itemUpdatedFromServer] = {
+                                "itemContent": contentFromServer,
+                                "itemUid": await itemUpdatedFromServer.getUid(),
+                                "itemIsDeleted":
+                                    await itemUpdatedFromServer.isDeleted(),
+                              };
+                              setState(() {
+                                _itemListResponse =
+                                    Future<Map<String, dynamic>>.value(
+                                        fullSnapshot);
+                              });*/
+                            }
+                          }
+                        }
+                      }
+                      if (anyWereChanged) {
+                        setState(() {
+                          _itemListResponse = getItemListResponse(
+                              widget.itemManager, widget.client, widget.colUid);
+                        });
+                      }
+                      await cacheClient.dispose();
+                    },
+                    icon: const Icon(Icons.snooze))
+              ]
             : null,
       ),
       floatingActionButton: FloatingActionButton(
@@ -165,8 +483,8 @@ class _MyHomePageState extends State<MyHomePage> {
                   context,
                   MaterialPageRoute(
                       builder: (BuildContext context) => EtebaseItemCreateRoute(
-                          itemManager: this.widget.itemManager,
-                          client: this.widget.client)))
+                          itemManager: widget.itemManager,
+                          client: widget.client)))
               .then((value) => _refreshIndicatorKey.currentState!.show());
         },
         tooltip: "Create task",
@@ -177,60 +495,71 @@ class _MyHomePageState extends State<MyHomePage> {
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          SearchBar(
-            controller: _searchTextController,
-            hintText: "Search",
-            leading: _searchTextController.text.isEmpty
-                ? const Icon(Icons.search)
-                : IconButton(
-                    icon: const Icon(Icons.close),
-                    tooltip: "Clear",
-                    onPressed: () {
-                      setState(() {
-                        _searchText = null;
-                        _searchTextController.text = "";
-                      });
-                    },
-                  ),
-            onSubmitted: (value) {
-              setState(() {
-                _searchText = value;
-                _searchTextController.text = value;
-              });
-            },
-            onChanged: (value) => setState(() {
-              _searchText = value;
-              _searchTextController.text = value;
-            }),
-          ),
-          SizedBox(
-              width: MediaQuery.sizeOf(context).width > 800
-                  ? MediaQuery.sizeOf(context).width / 2
-                  : null,
-              child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: dateSelectionWidgets)),
-          Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                const Icon(Icons.check),
-                Switch(
-                  value: showCompleted,
-                  onChanged: (value) => setState(() {
-                    showCompleted = value;
-                  }),
-                )
-              ]),
+          AutoDirection(
+              text: _searchTextController.text,
+              child: SearchBar(
+                controller: _searchTextController,
+                hintText: "Search",
+                leading: _searchTextController.text.isEmpty
+                    ? const Icon(Icons.search)
+                    : IconButton(
+                        icon: const Icon(Icons.close),
+                        tooltip: "Clear",
+                        onPressed: () {
+                          setState(() {
+                            _searchText = null;
+                            _searchTextController.text = "";
+                          });
+                        },
+                      ),
+                onSubmitted: (value) {
+                  setState(() {
+                    _searchText = value;
+                    _searchTextController.text = value;
+                  });
+                },
+                onChanged: (value) => setState(() {
+                  _searchText = value;
+                  _searchTextController.text = value;
+                }),
+              )),
+          ExpansionTile(title: const Text("Advanced"), children: [
+            Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: dateSelectionWidgets),
+            Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Row(children: [
+                    const Icon(Icons.check),
+                    Switch(
+                      value: showCompleted,
+                      onChanged: (value) => setState(() {
+                        showCompleted = value;
+                      }),
+                    )
+                  ]),
+                  Row(children: [
+                    const Icon(Icons.cancel),
+                    Switch(
+                      value: showCanceled,
+                      onChanged: (value) => setState(() {
+                        showCanceled = value;
+                      }),
+                    )
+                  ]),
+                ]),
+          ]),
           RefreshIndicator(
             key: _refreshIndicatorKey,
             onRefresh: () async {
               setState(() {
-                _itemListResponse = getItemListResponse(this.widget.itemManager,
-                    this.widget.client, this.widget.colUid);
+                _itemListResponse = getItemListResponse(
+                    widget.itemManager, widget.client, widget.colUid);
               });
               return _itemListResponse!.then((value) => null);
             },
@@ -248,13 +577,15 @@ class _MyHomePageState extends State<MyHomePage> {
                         children.addAll(
                             todoItemList(itemManager, itemMap, snapshot.data!));
                       } else {
+                        children.add(const Text("Fetching data"));
                         children.add(const CircularProgressIndicator());
                       }
+
                       return Padding(
                           padding: const EdgeInsets.all(8),
                           child: SizedBox(
                               //width: 600,
-                              height: MediaQuery.sizeOf(context).height / 2,
+                              height: MediaQuery.sizeOf(context).height * 0.60,
                               child: ListView.builder(
                                   itemCount: children.length,
                                   itemBuilder: (context, index) =>
@@ -266,6 +597,92 @@ class _MyHomePageState extends State<MyHomePage> {
         ],
       ), // This trailing comma makes auto-formatting nicer for build methods.
     );
+  }
+
+  /// Returns widgets for date selection
+  List<Widget> getDateSelectionWidgets(BuildContext context) {
+    final dateSelectionWidgets = <Widget>[
+      Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            const Text("Today"),
+            Switch(
+                value: todaySearch,
+                activeColor:
+                    _searchTextController.text.isNotEmpty ? Colors.grey : null,
+                onChanged: (bool newValue) {
+                  setState(() {
+                    todaySearch = newValue;
+                    if (newValue) {
+                      dateSearchEnd = DateTime.now()
+                          .copyWith(hour: 23, minute: 59, second: 59);
+                    }
+                    if (!newValue && dateSearchStart == null) {
+                      dateSearchStart = DateTime.now()
+                          .copyWith(hour: 0, minute: 0, second: 0);
+                      _dateSearchStartController.text =
+                          DateFormat("yyyy-MM-dd").format(dateSearchStart!);
+                    }
+                  });
+                }),
+            const VerticalDivider()
+          ]),
+      SizedBox(
+          width: 175,
+          child: TextField(
+              controller: _dateSearchStartController,
+              readOnly: true,
+              onTap: () async {
+                await showDatePicker(
+                        context: context,
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                        initialDate: (dateSearchStart ?? DateTime.now())
+                            .copyWith(hour: 0, minute: 0, second: 0),
+                        currentDate: (DateTime.now())
+                            .copyWith(hour: 0, minute: 0, second: 0))
+                    .then((value) => setState(() {
+                          dateSearchStart =
+                              value?.copyWith(hour: 0, minute: 0, second: 0);
+                          _dateSearchStartController.text =
+                              dateSearchStart != null
+                                  ? DateFormat("yyyy-MM-dd")
+                                      .format(dateSearchStart!)
+                                  : "";
+                        }));
+              },
+              decoration: const InputDecoration(
+                  icon: Icon(Icons.calendar_month),
+                  label: Text("Start date range")))),
+      SizedBox(
+          width: 175,
+          child: TextField(
+              controller: _dateSearchEndController,
+              readOnly: true,
+              onTap: () async {
+                await showDatePicker(
+                        context: context,
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime(2100),
+                        initialDate: (dateSearchEnd ?? DateTime.now())
+                            .copyWith(hour: 23, minute: 59, second: 59),
+                        currentDate: (DateTime.now())
+                            .copyWith(hour: 23, minute: 59, second: 59))
+                    .then((value) => setState(() {
+                          dateSearchEnd =
+                              value?.copyWith(hour: 23, minute: 59, second: 59);
+                          _dateSearchEndController.text = dateSearchEnd != null
+                              ? DateFormat("yyyy-MM-dd").format(dateSearchEnd!)
+                              : "";
+                        }));
+              },
+              decoration: const InputDecoration(
+                  icon: Icon(Icons.calendar_month),
+                  label: Text("End date range")))),
+    ];
+    return dateSelectionWidgets;
   }
 
   Future<Map<String, dynamic>?> onPressedItemWidget(
@@ -290,51 +707,18 @@ class _MyHomePageState extends State<MyHomePage> {
       EtebaseItemManager itemManager,
       Map<EtebaseItem, Map<String, dynamic>> itemMap,
       Map<String, dynamic> fullSnapshot) {
-    final client = this.widget.client;
+    final client = widget.client;
     List<Widget> children = [];
     final itemsSorted = <ItemMapWrapper>[];
     final itemsByUID = <String, ItemMapWrapper>{};
     var dtToday = DateTime.now().copyWith(hour: 23, minute: 59, second: 59);
-    for (final entry in itemMap.entries) {
-      final key = entry.key;
-      final value = entry.value;
-      late final VCalendar icalendar;
-      if (value["itemIsDeleted"]) {
-        continue;
-      }
-
-      try {
-        icalendar = VComponent.parse(
-            utf8.decode(value["itemContent"] as Uint8List),
-            customParser: iCalendarCustomParser) as VCalendar;
-      } catch (e) {
-        continue;
-      }
-
-      if (icalendar.todo == null) {
-        continue;
-      }
-      final compTodo = icalendar.todo!;
-
-      final statusTodo = compTodo.status;
-
-      if (statusTodo == TodoStatus.cancelled) {
-        continue;
-      }
-
-      if (statusTodo == TodoStatus.completed && !showCompleted) {
-        continue;
-      }
-
-      itemsSorted
-          .add(ItemMapWrapper(item: key, value: value, icalendar: icalendar));
-      itemsByUID[icalendar.todo!.uid] = itemsSorted.last;
-    }
+    filterItems(itemMap, itemsSorted, itemsByUID);
     itemsSorted.sort((a, b) {
+      // We treat null priority as greater than low, so that it sorts after.
       final priorityIntCompare =
-          (a.icalendar.todo!.priorityInt ?? Priority.low.numericValue)
-              .compareTo(
-                  (b.icalendar.todo!.priorityInt ?? Priority.low.numericValue));
+          (a.icalendar.todo!.priorityInt ?? (Priority.low.numericValue + 1))
+              .compareTo((b.icalendar.todo!.priorityInt ??
+                  (Priority.low.numericValue + 1)));
 
       DateTime? aDue = /*a.icalendar.todo!.start ??*/ a.icalendar.todo!.due;
       if (aDue == null && (a.icalendar.todo!.relatedTo?.isNotEmpty ?? false)) {
@@ -421,102 +805,196 @@ class _MyHomePageState extends State<MyHomePage> {
           _searchTextController.text.isEmpty) {
         continue;
       }
+
       final actionColor = switch (compTodo.priority) {
         Priority.low => Colors.blue,
         Priority.undefined || null => Colors.grey,
         Priority.medium => Colors.orange,
         Priority.high => Colors.red,
       };
+      final textDirection = Bidi.detectRtlDirectionality(compTodo.summary ?? "")
+          ? TextDirection.RTL
+          : TextDirection.LTR;
       final child = ListTile(
-        title: Text(compTodo.summary ?? ""),
-        selected: _selectedTasks.contains(item.value["itemUid"]),
+        leading: Text(
+          dateForLogicDue != null
+              ? DateFormat(DateFormat.HOUR24_MINUTE).format(dateForLogicDue)
+              : "",
+          style: TextStyle(
+              color: dateForLogicDue != null &&
+                      DateTime.now().compareTo(dateForLogicDue) > 0
+                  ? Colors.orange
+                  : null),
+        ),
+        title: Column(
+            crossAxisAlignment: textDirection == TextDirection.RTL
+                ? CrossAxisAlignment.end
+                : CrossAxisAlignment.start,
+            children: [
+              AutoDirection(
+                  text: compTodo.summary ?? "",
+                  child: Text(compTodo.summary ?? "")),
+              if (compTodo.description != null &&
+                  compTodo.description!.isNotEmpty)
+                AutoDirection(
+                    text: compTodo.description ?? "",
+                    child: Text(compTodo.description ?? "")),
+            ]),
+        selected: _selectedTasks.containsKey(item.value["itemUid"]),
         selectedTileColor: Colors.grey[100],
-        subtitle: Text(
-            'start: ${icalendar.todo!.start ?? (compTodo.relatedTo != null ? dateForLogicStart : null)}, due: ${icalendar.todo!.due ?? (compTodo.relatedTo != null ? dateForLogicDue : null)}'),
+        subtitle: Row(
+            mainAxisAlignment: textDirection == TextDirection.LTR
+                ? MainAxisAlignment.end
+                : MainAxisAlignment.start,
+            children: <Widget>[
+                  dateForLogicStart != null
+                      ? Chip(
+                          label: RichText(
+                              text: TextSpan(children: [
+                          TextSpan(
+                              text: dateForLogicStart != null
+                                  ? (DateUtils.isSameDay(
+                                          dateForLogicStart, today)
+                                      ? (DateFormat.Hm())
+                                          .format(dateForLogicStart)
+                                      : DateFormat.yMd()
+                                          .format(dateForLogicStart))
+                                  : null,
+                              style: const TextStyle(color: Colors.black87)),
+                          const WidgetSpan(
+                              child: Icon(
+                                Icons.start,
+                                color: Colors.black87,
+                              ),
+                              alignment: PlaceholderAlignment.middle)
+                        ])))
+                      : Container(),
+                  Chip(
+                      label: RichText(
+                          text: TextSpan(children: [
+                    TextSpan(
+                        text: dateForLogicDue != null
+                            ? (DateUtils.isSameDay(dateForLogicDue, today)
+                                ? (DateFormat.Hm()).format(dateForLogicDue)
+                                : DateFormat.yMd().format(dateForLogicDue))
+                            : null,
+                        style: const TextStyle(color: Colors.black87)),
+                    const WidgetSpan(
+                        child: Icon(
+                          Icons.stop_circle,
+                          color: Colors.black87,
+                        ),
+                        alignment: PlaceholderAlignment.middle)
+                  ]))),
+                ] +
+                (compTodo.categories
+                        ?.map((e) => Chip(
+                              label: Text(e),
+                              visualDensity: VisualDensity.compact,
+                            ))
+                        .toList() ??
+                    [])),
         trailing: IconButton(
           icon: Icon(icalendar.todo!.recurrenceRule != null
               ? Icons.repeat
               : (statusTodo == TodoStatus.completed
                   ? Icons.check
-                  : Icons.check_box_outline_blank)),
+                  : (statusTodo == TodoStatus.cancelled
+                      ? Icons.cancel
+                      : Icons.check_box_outline_blank))),
           color: actionColor,
           onPressed: statusTodo == TodoStatus.completed
               ? null
               : () async {
-                  await onPressedToggleCompletion(
-                          eteItem, icalendar!, itemManager, compTodo)
-                      .then((value) async {
-                    final username = getUsernameInCacheDir();
-                    final cacheClient = await EtebaseFileSystemCache.create(
-                        client, cacheDir, username);
-                    final colUid = getCollectionUIDInCacheDir();
-                    await cacheClient.itemSet(
-                        itemManager, colUid, value["item"]);
-                    await cacheClient.dispose();
-                    (fullSnapshot["items"]! as Map).remove(eteItem);
-                    (fullSnapshot["items"]! as Map)[value["item"]] = {
-                      "itemContent": value["itemContent"],
-                      "itemUid": value["itemUid"],
-                      "itemIsDeleted": value["itemIsDeleted"]
-                    };
-                    setState(() {
-                      _itemListResponse =
-                          Future<Map<String, dynamic>>.value(fullSnapshot);
+                  try {
+                    await onPressedToggleCompletion(
+                            eteItem, icalendar!, itemManager, compTodo)
+                        .then((value) async {
+                      final username = await getUsernameInCacheDir();
+                      final cacheClient = await EtebaseFileSystemCache.create(
+                          client, await getCacheDir(), username);
+                      final colUid = await getCollectionUIDInCacheDir();
+                      await cacheClient.itemSet(
+                          itemManager, colUid, value["item"]);
+                      await cacheClient.dispose();
+                      (fullSnapshot["items"]! as Map).remove(eteItem);
+                      (fullSnapshot["items"]! as Map)[value["item"]] = {
+                        "itemContent": value["itemContent"],
+                        "itemUid": value["itemUid"],
+                        "itemIsDeleted": value["itemIsDeleted"]
+                      };
+                      setState(() {
+                        _itemListResponse =
+                            Future<Map<String, dynamic>>.value(fullSnapshot);
+                      });
+                      return value;
                     });
-                    return value;
-                  }, onError: ((error, stackTrace) {
+                  } on Exception catch (error, stackTrace) {
+                    if (kDebugMode) {
+                      print(stackTrace);
+                      print(error);
+                    }
+
                     if (error is EtebaseException) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text(error.message),
-                        duration: const Duration(seconds: 5),
-                        action: SnackBarAction(
-                          label: 'OK',
-                          onPressed: () async {
-                            if (error.code == EtebaseErrorCode.conflict) {
-                              final itemUpdatedFromServer = await itemManager
-                                  .fetch(await eteItem.getUid());
-                              final contentFromServer =
-                                  await itemUpdatedFromServer.getContent();
-
-                              final username = getUsernameInCacheDir();
-                              final cacheClient =
-                                  await EtebaseFileSystemCache.create(
-                                      client, cacheDir, username);
-                              final colUid = getCollectionUIDInCacheDir();
-                              await cacheClient.itemSet(
-                                  itemManager, colUid, itemUpdatedFromServer);
-                              await cacheClient.dispose();
-
-                              (fullSnapshot["items"]! as Map).remove(eteItem);
-
-                              (fullSnapshot["items"]!
-                                  as Map)[itemUpdatedFromServer] = {
-                                "itemContent": contentFromServer,
-                                "itemUid": await itemUpdatedFromServer.getUid(),
-                                "itemIsDeleted":
-                                    await itemUpdatedFromServer.isDeleted(),
-                              };
-                              setState(() {
-                                _itemListResponse =
-                                    Future<Map<String, dynamic>>.value(
-                                        fullSnapshot);
-                              });
-                            }
-                            if (mounted) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(error.message),
+                          duration: const Duration(seconds: 5),
+                          action: SnackBarAction(
+                            label: 'OK',
+                            onPressed: () async {
                               ScaffoldMessenger.of(context)
                                   .hideCurrentSnackBar();
-                            }
-                          },
-                        ),
-                      ));
+                            },
+                          ),
+                        ));
+                      }
+                      if (error.code == EtebaseErrorCode.conflict) {
+                        final itemUpdatedFromServer =
+                            await itemManager.fetch(await eteItem.getUid());
+                        final contentFromServer =
+                            await itemUpdatedFromServer.getContent();
+                        if (kDebugMode) {
+                          print("------BEGIN returned from server ---------");
+                          print(
+                              "ETAG: ${await itemUpdatedFromServer.getEtag()}");
+                          print(
+                              (VComponent.parse(utf8.decode(contentFromServer))
+                                      as VCalendar)
+                                  .toString());
+                          print("------END returned from server ---------");
+                        }
+
+                        final username = await getUsernameInCacheDir();
+                        final cacheClient = await EtebaseFileSystemCache.create(
+                            client, await getCacheDir(), username);
+                        final colUid = await getCollectionUIDInCacheDir();
+                        await cacheClient.itemSet(
+                            itemManager, colUid, itemUpdatedFromServer);
+                        await cacheClient.dispose();
+
+                        (fullSnapshot["items"]! as Map).remove(eteItem);
+
+                        (fullSnapshot["items"]! as Map)[itemUpdatedFromServer] =
+                            {
+                          "itemContent": contentFromServer,
+                          "itemUid": await itemUpdatedFromServer.getUid(),
+                          "itemIsDeleted":
+                              await itemUpdatedFromServer.isDeleted(),
+                        };
+                        setState(() {
+                          _itemListResponse =
+                              Future<Map<String, dynamic>>.value(fullSnapshot);
+                        });
+                      }
                     }
-                  }));
+                  }
                 },
         ),
         onLongPress: () {
           setState(() {
-            if (!_selectedTasks.contains(item.value["itemUid"])) {
-              _selectedTasks.add(item.value["itemUid"]);
+            if (!_selectedTasks.containsKey(item.value["itemUid"])) {
+              _selectedTasks[item.value["itemUid"]] = item;
               //_anySelectedTasks = true;
             } else {
               _selectedTasks.remove(item.value["itemUid"]);
@@ -552,6 +1030,47 @@ class _MyHomePageState extends State<MyHomePage> {
       children.add(child);
     }
     return children;
+  }
+
+  void filterItems(
+      Map<EtebaseItem, Map<String, dynamic>> itemMap,
+      List<ItemMapWrapper> itemsSorted,
+      Map<String, ItemMapWrapper> itemsByUID) {
+    for (final entry in itemMap.entries) {
+      final key = entry.key;
+      final value = entry.value;
+      late final VCalendar icalendar;
+      if (value["itemIsDeleted"]) {
+        continue;
+      }
+
+      try {
+        icalendar = VComponent.parse(
+            utf8.decode(value["itemContent"] as Uint8List),
+            customParser: iCalendarCustomParser) as VCalendar;
+      } catch (e) {
+        continue;
+      }
+
+      if (icalendar.todo == null) {
+        continue;
+      }
+      final compTodo = icalendar.todo!;
+
+      final statusTodo = compTodo.status;
+
+      if (statusTodo == TodoStatus.cancelled && !showCanceled) {
+        continue;
+      }
+
+      if (statusTodo == TodoStatus.completed && !showCompleted) {
+        continue;
+      }
+
+      itemsSorted
+          .add(ItemMapWrapper(item: key, value: value, icalendar: icalendar));
+      itemsByUID[icalendar.todo!.uid] = itemsSorted.last;
+    }
   }
 
   Future<Map<String, dynamic>> onPressedToggleCompletion(
@@ -607,7 +1126,8 @@ class _MyHomePageState extends State<MyHomePage> {
     await itemClone.setMeta(itemMetaClone);
     if (kDebugMode) {
       print("--------BEGIN Intended changes---------");
-      print(actualNextTodo.toString());
+      print("ETAG: ${await itemClone.getEtag()}");
+      print(actualNextTodo.parent!.toString());
       print("--------END Intended changes-----------");
     }
 
@@ -620,6 +1140,117 @@ class _MyHomePageState extends State<MyHomePage> {
             as VCalendar;
     return {
       "item": eteItemFromServer,
+      "itemSentToServer": itemClone,
+      "icalendar": icalendarUpdated,
+      "itemContent": (await eteItemFromServer.getContent()),
+      "todo": icalendarUpdated.todo!,
+      "itemIsDeleted": (await eteItemFromServer.isDeleted()),
+      "itemUid": (await eteItemFromServer.getUid()),
+    };
+  }
+
+  Future<Map<String, dynamic>?> onPressedModifyDueDate(
+      EtebaseItem eteItem,
+      VCalendar icalendar,
+      EtebaseItemManager itemManager,
+      VTodo compTodo,
+      BuildContext context) async {
+    final itemClone = await eteItem.clone();
+    final todoComp = compTodo;
+    bool sequenceChange = false;
+    final changedStatus = todoComp.status;
+    DateTime? updatedDueDate = todoComp.due;
+    if (context.mounted) {
+      updatedDueDate = await showDatePicker(
+              context: context,
+              firstDate: DateTime(2000),
+              lastDate: DateTime(2100),
+              initialDate: (todoComp.due ?? todoComp.start ?? DateTime.now()),
+              currentDate: (DateTime.now()))
+          .then((DateTime? date) async {
+        if (date != null) {
+          final time = await showTimePicker(
+            context: context,
+            initialTime: TimeOfDay.fromDateTime(
+                todoComp.due ?? todoComp.start ?? DateTime.now()),
+          );
+          return time != null
+              ? date.copyWith(hour: time.hour, minute: time.minute)
+              : null;
+        } else {
+          return null;
+        }
+      });
+
+      if (updatedDueDate == null) {
+        return null;
+      }
+    }
+
+    /*
+                            
+                            sequence must change if:
+                            o  "DTSTART"
+                            
+                            o  "DTEND"
+                            
+                            o  "DURATION"
+                            
+                            o  "DUE"
+                            
+                            o  "RRULE"
+                            
+                            o  "RDATE"
+                            
+                            o  "EXDATE"
+                            
+                            o  "STATUS"
+                            */
+    bool statusChanged = false;
+    if (changedStatus != todoComp.status) {
+      todoComp.status = changedStatus;
+      sequenceChange = true;
+      statusChanged = true;
+    }
+
+    if (updatedDueDate != todoComp.due) {
+      todoComp.due = updatedDueDate;
+      sequenceChange = true;
+    }
+
+    todoComp.lastModified = DateTime.now();
+
+    if (sequenceChange) {
+      todoComp.sequence = (todoComp.sequence ?? 0) + 1;
+    }
+    final nextTodo = (statusChanged &&
+            (todoComp.status == TodoStatus.completed ||
+                todoComp.status == TodoStatus.cancelled))
+        ? getNextOccurrence(todoComp, todoComp.recurrenceRule)
+        : todoComp;
+
+    final actualNextTodo = nextTodo ?? todoComp;
+    actualNextTodo.checkValidity();
+    final itemMetaClone = (await itemClone.getMeta())
+        .copyWith(mtime: nextTodo?.lastModified ?? todoComp.lastModified);
+    await itemClone.setMeta(itemMetaClone);
+    if (kDebugMode) {
+      print("--------BEGIN Intended changes---------");
+      print("ETAG: ${await itemClone.getEtag()}");
+      print(actualNextTodo.parent!.toString());
+      print("--------END Intended changes-----------");
+    }
+
+    await itemClone.setContent(utf8.encode(actualNextTodo.parent!.toString()));
+    await itemManager.transaction([itemClone]);
+    await eteItem.setContent(await itemClone.getContent());
+    final eteItemFromServer = await itemManager.fetch(await eteItem.getUid());
+    final icalendarUpdated =
+        VComponent.parse(utf8.decode(await eteItemFromServer.getContent()))
+            as VCalendar;
+    return {
+      "item": eteItemFromServer,
+      "itemSentToServer": itemClone,
       "icalendar": icalendarUpdated,
       "itemContent": (await eteItemFromServer.getContent()),
       "todo": icalendarUpdated.todo!,

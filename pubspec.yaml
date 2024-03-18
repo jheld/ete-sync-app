@@ -35,10 +35,9 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.2
-  flutter_dotenv: ^5.1.0
-  enough_icalendar: ^0.16.0
+  enough_icalendar: ^0.15.0
   datetime_picker_formfield_new: ^2.1.0
-  intl: ^0.19.0
+  intl: ^0.18.0
   rrule_generator: ^0.5.6
   uuid: ^4.2.2
   rrule: ^0.2.16
@@ -48,6 +47,13 @@ dependencies:
   logging: ^1.2.0
   flutter_secure_storage: ^9.0.0
   window_manager: ^0.3.8
+  calendar_date_picker2: ^0.5.5
+  auto_direction: ^0.0.7
+  pretty_diff_text: ^1.0.0
+  flutter_input_chips: ^1.0.3
+  shared_preferences: ^2.2.2
+  url_launcher: ^6.2.5
+  path_provider: ^2.1.2
 
 dev_dependencies:
   flutter_test:
@@ -73,7 +79,6 @@ flutter:
 
   # To add assets to your application, add an assets section, like this:
   assets:
-    - assets/.env
   #   - images/a_dot_burr.jpeg
   #   - images/a_dot_ham.jpeg
 
