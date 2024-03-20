@@ -8,6 +8,7 @@ import 'package:etebase_flutter/etebase_flutter.dart';
 import 'package:flutter/foundation.dart';
 
 import 'package:flutter/material.dart';
+
 import 'package:flutter_input_chips/flutter_input_chips.dart';
 import 'package:intl/intl.dart';
 import 'package:pretty_diff_text/pretty_diff_text.dart';
@@ -1225,6 +1226,7 @@ class RevisionStatefulWidget extends StatefulWidget {
 
 class _RevisionStatefulWidgetState extends State<RevisionStatefulWidget> {
   final toDiff = <RevisionItemWrapper>[];
+
   @override
   Widget build(BuildContext context) {
     final revisionChildren = <Widget>[];
@@ -1237,7 +1239,8 @@ class _RevisionStatefulWidgetState extends State<RevisionStatefulWidget> {
                 toDiff.remove(element);
               } else {
                 toDiff.add(element);
-                /*toDiff.sort((a, b) {
+
+                toDiff.sort((a, b) {
                   final compared = a.mtime!.compareTo(b.mtime!);
                   if (compared < 0) {
                     return -1 * compared;
@@ -1246,7 +1249,7 @@ class _RevisionStatefulWidgetState extends State<RevisionStatefulWidget> {
                   } else {
                     return -1 * compared;
                   }
-                });*/
+                });
               }
             });
           },

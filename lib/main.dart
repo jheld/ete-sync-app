@@ -9,6 +9,14 @@ import 'package:timezone/data/latest.dart' as tz;
 import 'package:window_manager/window_manager.dart';
 
 Future<void> main() async {
+  await setupWindow();
+  tz.initializeTimeZones();
+
+  runApp(const MyApp());
+}
+
+/// Setup Window (for Desktop)
+Future<void> setupWindow() async {
   if (!kIsWeb && Platform.isLinux) {
     WidgetsFlutterBinding.ensureInitialized();
     // Must add this line.
@@ -26,9 +34,6 @@ Future<void> main() async {
       await windowManager.focus();
     });
   }
-  tz.initializeTimeZones();
-
-  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
@@ -59,14 +64,37 @@ class MyApp extends StatelessWidget {
                 );
               }
             } else {
-              return const Scaffold(
-                  body: Column(children: [
-                Text("Checking for local config data..."),
-                CircularProgressIndicator()
-              ]));
+              return const InitialLoadingWidget();
             }
           }),
       debugShowCheckedModeBanner: false,
     );
+  }
+}
+
+class InitialLoadingWidget extends StatelessWidget {
+  const InitialLoadingWidget({
+    super.key,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+        appBar: AppBar(title: const Text('EteSync Task')),
+        body: const Center(
+          child: Column(children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Padding(
+                  padding: EdgeInsets.only(right: 24.0),
+                  child: Text("Checking for local config data..."),
+                ),
+                CircularProgressIndicator(),
+              ],
+            )
+          ]),
+        ));
   }
 }

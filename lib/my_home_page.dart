@@ -54,113 +54,125 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
                     }
                     return null;
                   },
+                  onFieldSubmitted: (value) async {
+                    await loginValidationSubmit(context);
+                  },
                 ),
                 TextFormField(
                   controller: usernameController,
                   decoration: const InputDecoration(labelText: "Username"),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return "Must be non-empty";
+                    }
+                    return null;
+                  },
+                  onFieldSubmitted: (value) async {
+                    await loginValidationSubmit(context);
+                  },
                 ),
                 TextFormField(
                   controller: passwordController,
                   decoration: const InputDecoration(labelText: "Password"),
                   obscureText: true,
+                  onFieldSubmitted: (value) async {
+                    await loginValidationSubmit(context);
+                  },
                 ),
                 TextButton(
                     onPressed: () async {
-                      if (_formKey.currentState!.validate()) {
-                        final client = await EtebaseClient.create(
-                            "ete_sync_client",
-                            Uri.parse(serverUrlController.text));
-                        final Future<SharedPreferences> prefsInstance =
-                            SharedPreferences.getInstance();
-                        final SharedPreferences prefs = await prefsInstance;
-                        await prefs.setString("ete_base_url",
-                            Uri.parse(serverUrlController.text).toString());
-
-                        //final client = widget.client;
-                        late final EtebaseAccount etebase;
-                        try {
-                          etebase = await EtebaseAccount.login(client,
-                              usernameController.text, passwordController.text);
-                        } on EtebaseException catch (e) {
-                          if (kDebugMode) {
-                            print(e);
-                          }
-                          _formKey.currentState!.reset();
-                          return;
-                          //if (e.code == EtebaseErrorCode.unauthorized) {}
-                        }
-
-                        final username = usernameController.text;
-                        final cacheDir = await getCacheDir();
-
-                        final cacheClient = await EtebaseFileSystemCache.create(
-                            client, cacheDir, username);
-                        const secureStorage = FlutterSecureStorage();
-                        final eteCacheAccountEncryptionValue =
-                            await EtebaseUtils.randombytes(client, 32);
-
-                        await secureStorage.write(
-                            key: eteCacheAccountEncryptionKeyString,
-                            value:
-                                base64Encode(eteCacheAccountEncryptionValue));
-
-                        await cacheClient.saveAccount(
-                            etebase, eteCacheAccountEncryptionValue);
-
-                        final collectionMap = await getCollections(client,
-                            etebaseAccount: etebase);
-
-                        if (collectionMap["items"].isEmpty) {
-                          await etebase.logout();
-                        } else if (context.mounted) {
-                          final collectionUid = await showDialog(
-                              context: context,
-                              barrierDismissible: false,
-                              builder: (BuildContext context) {
-                                return Dialog(
-                                  child: Column(
-                                      children: (collectionMap["items"] as Map<
-                                              EtebaseCollection,
-                                              Map<String, dynamic>>)
-                                          .values
-                                          .where((element) =>
-                                              !element["itemIsDeleted"])
-                                          .map((element) =>
-                                              buildCollectionListTile(element,
-                                                  cacheDir, username, context))
-                                          .toList()),
-                                );
-                              });
-
-                          final collUid = collectionUid;
-                          final collectionManager =
-                              await etebase.getCollectionManager();
-                          final collection =
-                              await collectionManager.fetch(collUid);
-                          await cacheClient.collectionSet(
-                              collectionManager, collection);
-
-                          final itemManager = await collectionManager
-                              .getItemManager(collection);
-                          final homePageTitle =
-                              (await collection.getMeta()).name;
-                          if (context.mounted) {
-                            Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                    builder: (BuildContext context) =>
-                                        MyHomePage(
-                                            title: homePageTitle ?? "My Tasks",
-                                            itemManager: itemManager,
-                                            client: widget.client,
-                                            colUid: collUid)));
-                          }
-                        }
-                      }
+                      await loginValidationSubmit(context);
                     },
                     child: const Text("Login"))
               ])),
         ]));
+  }
+
+  Future<void> loginValidationSubmit(BuildContext context) async {
+    if (_formKey.currentState!.validate()) {
+      final client = await EtebaseClient.create(
+          "ete_sync_client", Uri.parse(serverUrlController.text));
+      final Future<SharedPreferences> prefsInstance =
+          SharedPreferences.getInstance();
+      final SharedPreferences prefs = await prefsInstance;
+      await prefs.setString(
+          "ete_base_url", Uri.parse(serverUrlController.text).toString());
+
+      //final client = widget.client;
+      bool encounteredError = false;
+      late final EtebaseAccount etebase;
+      try {
+        etebase = await EtebaseAccount.login(
+            client, usernameController.text, passwordController.text);
+      } on EtebaseException catch (e) {
+        if (kDebugMode) {
+          print(e);
+        }
+        encounteredError = true;
+        _formKey.currentState!.reset();
+
+        //if (e.code == EtebaseErrorCode.unauthorized) {}
+      }
+
+      if (!encounteredError) {
+        final username = usernameController.text;
+        final cacheDir = await getCacheDir();
+
+        final cacheClient =
+            await EtebaseFileSystemCache.create(client, cacheDir, username);
+        const secureStorage = FlutterSecureStorage();
+        final eteCacheAccountEncryptionValue =
+            await EtebaseUtils.randombytes(client, 32);
+
+        await secureStorage.write(
+            key: eteCacheAccountEncryptionKeyString,
+            value: base64Encode(eteCacheAccountEncryptionValue));
+
+        await cacheClient.saveAccount(etebase, eteCacheAccountEncryptionValue);
+
+        final collectionMap =
+            await getCollections(client, etebaseAccount: etebase);
+
+        if (collectionMap["items"].isEmpty) {
+          await etebase.logout();
+        } else if (context.mounted) {
+          final collectionUid = await showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (BuildContext context) {
+                return Dialog(
+                  child: Column(
+                      children: (collectionMap["items"]
+                              as Map<EtebaseCollection, Map<String, dynamic>>)
+                          .values
+                          .where((element) => !element["itemIsDeleted"])
+                          .map((element) => buildCollectionListTile(
+                              element, cacheDir, username, context))
+                          .toList()),
+                );
+              });
+
+          final collUid = collectionUid;
+          final collectionManager = await etebase.getCollectionManager();
+          final collection = await collectionManager.fetch(collUid);
+          await cacheClient.collectionSet(collectionManager, collection);
+
+          final itemManager =
+              await collectionManager.getItemManager(collection);
+          final homePageTitle = (await collection.getMeta()).name;
+          if (context.mounted) {
+            await Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (BuildContext context) => MyHomePage(
+                        title: homePageTitle ?? "My Tasks",
+                        itemManager: itemManager,
+                        client: widget.client,
+                        colUid: collUid)));
+          }
+        }
+      }
+    }
   }
 }
 
@@ -191,12 +203,13 @@ ListTile buildCollectionListTile(Map<String, dynamic> element, String cacheDir,
 }
 
 class MyHomePage extends StatefulWidget {
-  const MyHomePage(
-      {super.key,
-      required this.title,
-      required this.itemManager,
-      required this.client,
-      required this.colUid});
+  const MyHomePage({
+    super.key,
+    required this.title,
+    required this.itemManager,
+    required this.client,
+    required this.colUid,
+  });
 
   // This widget is the home page of your application. It is stateful, meaning
   // that it has a State object (defined below) that contains fields that affect
@@ -235,6 +248,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
   final _dateSearchStartController = TextEditingController();
   Future<Map<String, dynamic>>? collections;
 
+  Future<Map<String, dynamic>>? accountInfo;
+
   @override
   void dispose() {
     widget.client.dispose();
@@ -269,118 +284,207 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       //     DateFormat("yyyy-MM-dd").format(dateSearchStart!);
       today = DateTime.now();
       collections = getCollections(widget.client);
+      accountInfo = getCacheConfigInfo(widget.client);
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    List<Widget> dateSelectionWidgets = getDateSelectionWidgets(context);
-    return Scaffold(
-      drawer: Drawer(
-          child: ListView(children: [
-        DrawerHeader(
-            child: Column(children: [
-          const Text("Collection List"),
-          TextButton(
+    return FutureBuilder<Map<String, dynamic>>(
+        future: _itemListResponse,
+        builder: (BuildContext context,
+            AsyncSnapshot<Map<String, dynamic>?> snapshot) {
+          List<Widget> children = [];
+          return Scaffold(
+            drawer: snapshot.hasData ? buildDrawer(context) : null,
+            appBar:
+                snapshot.hasData ? buildAppBar(context, snapshot.data!) : null,
+            floatingActionButton: FloatingActionButton(
               onPressed: () async {
-                final Future<SharedPreferences> prefsInstance =
-                    SharedPreferences.getInstance();
-                final SharedPreferences prefs = await prefsInstance;
-                final eteBaseUrlRawString = prefs.getString("ete_base_url");
-                final serverUri = eteBaseUrlRawString != null
-                    ? Uri.tryParse(eteBaseUrlRawString)
-                    : null;
-
-                final username = await getUsernameInCacheDir();
-                final cacheDir = getCacheDir();
-                const secureStorage = FlutterSecureStorage();
-
-                final eteCacheAccountEncryptionKey = await secureStorage
-                        .read(key: eteCacheAccountEncryptionKeyString)
-                        .then((value) =>
-                            value != null ? base64Decode(value) : value)
-                    as Uint8List?;
-
-                final cacheClient = await EtebaseFileSystemCache.create(
-                    widget.client, await getCacheDir(), username);
-                final etebase = await cacheClient.loadAccount(
-                    widget.client, eteCacheAccountEncryptionKey);
-                await etebase.logout();
-                await cacheClient.clearUser();
-                if (await Directory("$cacheDir/$username").exists()) {
-                  Directory("$cacheDir/$username").deleteSync(recursive: true);
-                }
-                if (context.mounted) {
-                  Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                          builder: (BuildContext context) => AccountLoadPage(
-                                client: widget.client,
-                                serverUri: serverUri,
-                              )));
-                }
+                await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (BuildContext context) =>
+                                EtebaseItemCreateRoute(
+                                    itemManager: widget.itemManager,
+                                    client: widget.client)))
+                    .then((value) => _refreshIndicatorKey.currentState!.show());
               },
-              child: const Text("Sign out")),
-        ])),
-        FutureBuilder<Map<String, dynamic>?>(
-            future: collections,
-            builder: (BuildContext context,
-                AsyncSnapshot<Map<String, dynamic>?> snapshot) {
-              if (snapshot.hasData) {
-                final items = snapshot.data!["items"]
-                    as Map<EtebaseCollection, Map<String, dynamic>>;
-                final collItems = (items.values
-                    .where((element) => !element["itemIsDeleted"])
-                    .map((element) => buildCollectionListTile(
-                        element,
-                        snapshot.data!["cacheDir"]!,
-                        snapshot.data!["username"]!,
-                        context))
-                    .toList());
-                return Column(children: collItems);
-              } else {
-                return const CircularProgressIndicator();
-              }
-            }),
-      ])),
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: Text(widget.title),
-        actions: _selectedTasks.isNotEmpty
-            ? [
-                IconButton(
-                    onPressed: () async {
-                      bool anyWereChanged = false;
-                      final username = await getUsernameInCacheDir();
-                      final cacheClient = await EtebaseFileSystemCache.create(
-                          widget.client, await getCacheDir(), username);
-                      final colUid = await getCollectionUIDInCacheDir();
-                      for (var entry in _selectedTasks.entries) {
-                        final item = entry.value;
-                        final eteItem = item.item;
-                        final icalendar = item.icalendar;
-                        final itemManager = widget.itemManager;
-                        final compTodo = icalendar.todo!;
-                        if ([TodoStatus.completed, TodoStatus.cancelled]
-                            .contains(compTodo.status)) {
-                          return;
-                        }
-                        try {
-                          if (context.mounted) {
-                            await onPressedModifyDueDate(eteItem, icalendar,
-                                    itemManager, compTodo, context)
-                                .then((value) async {
-                              if (value == null) {
-                                return value;
-                              } else {
-                                anyWereChanged = true;
-                              }
+              tooltip: "Create task",
+              child: const Icon(Icons.add),
+            ),
+            body: RefreshIndicator(
+                key: _refreshIndicatorKey,
+                onRefresh: () async {
+                  setState(() {
+                    _itemListResponse = getItemListResponse(
+                        widget.itemManager, widget.client, widget.colUid);
+                  });
+                  return _itemListResponse!.then((value) => null);
+                },
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    AutoDirection(
+                        text: _searchTextController.text,
+                        child: SearchBar(
+                          controller: _searchTextController,
+                          hintText: "Search",
+                          leading: _searchTextController.text.isEmpty
+                              ? const Icon(Icons.search)
+                              : IconButton(
+                                  icon: const Icon(Icons.close),
+                                  tooltip: "Clear",
+                                  onPressed: () {
+                                    setState(() {
+                                      _searchText = null;
+                                      _searchTextController.text = "";
+                                    });
+                                  },
+                                ),
+                          onSubmitted: (value) {
+                            setState(() {
+                              _searchText = value;
+                              _searchTextController.text = value;
+                            });
+                          },
+                          onChanged: (value) => setState(() {
+                            _searchText = value;
+                            _searchTextController.text = value;
+                          }),
+                        )),
+                    buildExpansionTileTaskFinishedFilters(
+                        getDateSelectionWidgets(context)),
+                    buildMainContent(context, snapshot, children),
+                  ],
+                )),
+          );
+        });
+  }
 
-                              await cacheClient.itemSet(
-                                  itemManager, colUid, value["item"]);
+  Widget buildMainContent(BuildContext context,
+      AsyncSnapshot<Map<String, dynamic>?> snapshot, List<Widget> children) {
+    if (snapshot.hasData && snapshot.data != null) {
+      final itemManager = snapshot.data!["itemManager"];
+      final itemMap =
+          (snapshot.data!)["items"] as Map<EtebaseItem, Map<String, dynamic>>;
+      children.addAll(todoItemList(itemManager, itemMap, snapshot.data!));
+    } else {
+      children.add(const Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Padding(
+                padding: EdgeInsets.only(right: 24),
+                child: Text("Fetching data")),
+            SizedBox(width: 50, height: 50, child: CircularProgressIndicator())
+          ]));
+      if (snapshot.hasError) {
+        children.add(Text(snapshot.error!.toString()));
+      }
+    }
 
-                              /*(fullSnapshot["items"]! as Map).remove(eteItem);
-                            (fullSnapshot["items"]! as Map)[value["item"]] = {
+    return Column(
+      children: [
+        Column(
+          children: [
+            Padding(
+                padding: const EdgeInsets.all(8),
+                child: SizedBox(
+                    //width: 600,
+                    height: MediaQuery.sizeOf(context).height * 0.60,
+                    child: ListView.builder(
+                        itemCount: children.length,
+                        itemBuilder: (context, index) => children[index]))),
+          ],
+        ),
+      ],
+    );
+  }
+
+  ExpansionTile buildExpansionTileTaskFinishedFilters(
+      List<Widget> dateSelectionWidgets) {
+    return ExpansionTile(title: const Text("Advanced"), children: [
+      Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: dateSelectionWidgets),
+      Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Row(children: [
+              const Icon(Icons.check),
+              Switch(
+                value: showCompleted,
+                onChanged: (value) => setState(() {
+                  showCompleted = value;
+                }),
+              )
+            ]),
+            Row(children: [
+              const Icon(Icons.cancel),
+              Switch(
+                value: showCanceled,
+                onChanged: (value) => setState(() {
+                  showCanceled = value;
+                }),
+              )
+            ]),
+          ]),
+    ]);
+  }
+
+  AppBar buildAppBar(
+      BuildContext context, Map<String, dynamic> itemListResponse) {
+    return AppBar(
+      backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+      title: Text(widget.title),
+      actions: _selectedTasks.isNotEmpty
+          ? [
+              IconButton(
+                  onPressed: () async {
+                    bool anyWereChanged = false;
+                    final cacheClient = await EtebaseFileSystemCache.create(
+                        widget.client,
+                        await getCacheDir(),
+                        await getUsernameInCacheDir());
+
+                    final colUid = await getCollectionUIDInCacheDir();
+                    for (var entry in _selectedTasks.entries.toList()) {
+                      final item = entry.value;
+                      final eteItem = item.item;
+                      final icalendar = item.icalendar;
+                      final itemManager = widget.itemManager;
+                      final compTodo = icalendar.todo!;
+                      if ([TodoStatus.completed, TodoStatus.cancelled]
+                          .contains(compTodo.status)) {
+                        return;
+                      }
+                      try {
+                        if (context.mounted) {
+                          await onPressedModifyDueDate(eteItem, icalendar,
+                                  itemManager, compTodo, context)
+                              .then((value) async {
+                            if (value == null) {
+                              return value;
+                            } else {
+                              anyWereChanged = true;
+                            }
+
+                            await cacheClient.itemSet(
+                                itemManager, colUid, value["item"]);
+
+                            _selectedTasks.remove(entry.key);
+
+                            (itemListResponse["items"]! as Map).remove(eteItem);
+                            (itemListResponse["items"]!
+                                    as Map<EtebaseItem, Map<String, dynamic>>)[
+                                value["item"] as EtebaseItem] = {
                               "itemContent": value["itemContent"],
                               "itemUid": value["itemUid"],
                               "itemIsDeleted": value["itemIsDeleted"]
@@ -388,215 +492,179 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                             setState(() {
                               _itemListResponse =
                                   Future<Map<String, dynamic>>.value(
-                                      fullSnapshot);
-                            });*/
-                              return value;
+                                      itemListResponse);
                             });
+                            return value;
+                          });
+                        }
+                      } on Exception catch (error, stackTrace) {
+                        if (kDebugMode) {
+                          print(stackTrace);
+                          print(error);
+                        }
+
+                        if (error is EtebaseException) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                              content: Text(error.message),
+                              duration: const Duration(seconds: 5),
+                              action: SnackBarAction(
+                                label: 'OK',
+                                onPressed: () async {
+                                  ScaffoldMessenger.of(context)
+                                      .hideCurrentSnackBar();
+                                },
+                              ),
+                            ));
                           }
-                        } on Exception catch (error, stackTrace) {
-                          if (kDebugMode) {
-                            print(stackTrace);
-                            print(error);
-                          }
-
-                          if (error is EtebaseException) {
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context)
-                                  .showSnackBar(SnackBar(
-                                content: Text(error.message),
-                                duration: const Duration(seconds: 5),
-                                action: SnackBarAction(
-                                  label: 'OK',
-                                  onPressed: () async {
-                                    ScaffoldMessenger.of(context)
-                                        .hideCurrentSnackBar();
-                                  },
-                                ),
-                              ));
+                          if (error.code == EtebaseErrorCode.conflict) {
+                            final itemUpdatedFromServer =
+                                await itemManager.fetch(await eteItem.getUid());
+                            final contentFromServer =
+                                await itemUpdatedFromServer.getContent();
+                            if (kDebugMode) {
+                              print(
+                                  "------BEGIN returned from server ---------");
+                              print(
+                                  "ETAG: ${await itemUpdatedFromServer.getEtag()}");
+                              print((VComponent.parse(
+                                          utf8.decode(contentFromServer))
+                                      as VCalendar)
+                                  .toString());
+                              print("------END returned from server ---------");
                             }
-                            if (error.code == EtebaseErrorCode.conflict) {
-                              final itemUpdatedFromServer = await itemManager
-                                  .fetch(await eteItem.getUid());
-                              final contentFromServer =
-                                  await itemUpdatedFromServer.getContent();
-                              if (kDebugMode) {
-                                print(
-                                    "------BEGIN returned from server ---------");
-                                print(
-                                    "ETAG: ${await itemUpdatedFromServer.getEtag()}");
-                                print((VComponent.parse(
-                                            utf8.decode(contentFromServer))
-                                        as VCalendar)
-                                    .toString());
-                                print(
-                                    "------END returned from server ---------");
-                              }
 
-                              final username = await getUsernameInCacheDir();
-                              final cacheClient =
-                                  await EtebaseFileSystemCache.create(
-                                      widget.client,
-                                      await getCacheDir(),
-                                      username);
-                              final colUid = await getCollectionUIDInCacheDir();
-                              await cacheClient.itemSet(
-                                  itemManager, colUid, itemUpdatedFromServer);
-                              await cacheClient.dispose();
-                              setState(() {
-                                _itemListResponse = getItemListResponse(
-                                    itemManager, widget.client, colUid);
-                              });
+                            final cacheClient =
+                                await EtebaseFileSystemCache.create(
+                                    widget.client,
+                                    await getCacheDir(),
+                                    await getUsernameInCacheDir());
+                            final colUid = await getCollectionUIDInCacheDir();
+                            await cacheClient.itemSet(
+                                itemManager, colUid, itemUpdatedFromServer);
+                            await cacheClient.dispose();
 
-                              /* (fullSnapshot["items"]! as Map).remove(eteItem);
+                            (itemListResponse["items"]! as Map).remove(eteItem);
 
-                              (fullSnapshot["items"]!
-                                  as Map)[itemUpdatedFromServer] = {
-                                "itemContent": contentFromServer,
-                                "itemUid": await itemUpdatedFromServer.getUid(),
-                                "itemIsDeleted":
-                                    await itemUpdatedFromServer.isDeleted(),
-                              };
-                              setState(() {
-                                _itemListResponse =
-                                    Future<Map<String, dynamic>>.value(
-                                        fullSnapshot);
-                              });*/
-                            }
+                            (itemListResponse["items"]!
+                                as Map)[itemUpdatedFromServer] = {
+                              "itemContent": contentFromServer,
+                              "itemUid": await itemUpdatedFromServer.getUid(),
+                              "itemIsDeleted":
+                                  await itemUpdatedFromServer.isDeleted(),
+                            };
+                            setState(() {
+                              _itemListResponse =
+                                  Future<Map<String, dynamic>>.value(
+                                      itemListResponse);
+                            });
                           }
                         }
                       }
-                      if (anyWereChanged) {
-                        setState(() {
-                          _itemListResponse = getItemListResponse(
-                              widget.itemManager, widget.client, widget.colUid);
-                        });
-                      }
-                      await cacheClient.dispose();
-                    },
-                    icon: const Icon(Icons.snooze))
-              ]
-            : null,
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () async {
-          await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (BuildContext context) => EtebaseItemCreateRoute(
-                          itemManager: widget.itemManager,
-                          client: widget.client)))
-              .then((value) => _refreshIndicatorKey.currentState!.show());
-        },
-        tooltip: "Create task",
-        child: const Icon(Icons.add),
-      ),
-      body: Column(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          AutoDirection(
-              text: _searchTextController.text,
-              child: SearchBar(
-                controller: _searchTextController,
-                hintText: "Search",
-                leading: _searchTextController.text.isEmpty
-                    ? const Icon(Icons.search)
-                    : IconButton(
-                        icon: const Icon(Icons.close),
-                        tooltip: "Clear",
-                        onPressed: () {
-                          setState(() {
-                            _searchText = null;
-                            _searchTextController.text = "";
-                          });
-                        },
-                      ),
-                onSubmitted: (value) {
-                  setState(() {
-                    _searchText = value;
-                    _searchTextController.text = value;
-                  });
-                },
-                onChanged: (value) => setState(() {
-                  _searchText = value;
-                  _searchTextController.text = value;
-                }),
-              )),
-          ExpansionTile(title: const Text("Advanced"), children: [
-            Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: dateSelectionWidgets),
-            Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Row(children: [
-                    const Icon(Icons.check),
-                    Switch(
-                      value: showCompleted,
-                      onChanged: (value) => setState(() {
-                        showCompleted = value;
-                      }),
-                    )
-                  ]),
-                  Row(children: [
-                    const Icon(Icons.cancel),
-                    Switch(
-                      value: showCanceled,
-                      onChanged: (value) => setState(() {
-                        showCanceled = value;
-                      }),
-                    )
-                  ]),
-                ]),
-          ]),
-          RefreshIndicator(
-            key: _refreshIndicatorKey,
-            onRefresh: () async {
-              setState(() {
-                _itemListResponse = getItemListResponse(
-                    widget.itemManager, widget.client, widget.colUid);
-              });
-              return _itemListResponse!.then((value) => null);
-            },
-            child: Column(
-              children: [
-                FutureBuilder<Map<String, dynamic>?>(
-                    future: _itemListResponse,
-                    builder: (BuildContext context,
-                        AsyncSnapshot<Map<String, dynamic>?> snapshot) {
-                      List<Widget> children = [];
-                      if (snapshot.hasData && snapshot.data != null) {
-                        final itemManager = snapshot.data!["itemManager"];
-                        final itemMap = (snapshot.data!)["items"]
-                            as Map<EtebaseItem, Map<String, dynamic>>;
-                        children.addAll(
-                            todoItemList(itemManager, itemMap, snapshot.data!));
-                      } else {
-                        children.add(const Text("Fetching data"));
-                        children.add(const CircularProgressIndicator());
-                      }
-
-                      return Padding(
-                          padding: const EdgeInsets.all(8),
-                          child: SizedBox(
-                              //width: 600,
-                              height: MediaQuery.sizeOf(context).height * 0.60,
-                              child: ListView.builder(
-                                  itemCount: children.length,
-                                  itemBuilder: (context, index) =>
-                                      children[index])));
-                    }),
-              ],
-            ),
-          ),
-        ],
-      ), // This trailing comma makes auto-formatting nicer for build methods.
+                    }
+                    if (anyWereChanged) {
+                      setState(() {
+                        _itemListResponse = getItemListResponse(
+                            widget.itemManager, widget.client, widget.colUid);
+                      });
+                    }
+                    await cacheClient.dispose();
+                  },
+                  icon: const Icon(Icons.snooze))
+            ]
+          : null,
     );
+  }
+
+  Drawer buildDrawer(BuildContext context) {
+    return Drawer(
+        child: ListView(children: [
+      DrawerHeader(
+          child: Column(children: [
+        const Text("Collection List"),
+        TextButton(
+            onPressed: () async {
+              final Future<SharedPreferences> prefsInstance =
+                  SharedPreferences.getInstance();
+              final SharedPreferences prefs = await prefsInstance;
+              final eteBaseUrlRawString = prefs.getString("ete_base_url");
+              final serverUri = eteBaseUrlRawString != null
+                  ? Uri.tryParse(eteBaseUrlRawString)
+                  : null;
+
+              const secureStorage = FlutterSecureStorage();
+
+              final eteCacheAccountEncryptionKey = await secureStorage
+                      .read(key: eteCacheAccountEncryptionKeyString)
+                      .then((value) =>
+                          value != null ? base64Decode(value) : value)
+                  as Uint8List?;
+              final cacheClient = await EtebaseFileSystemCache.create(
+                  widget.client,
+                  await getCacheDir(),
+                  await getUsernameInCacheDir());
+
+              final etebase = await cacheClient.loadAccount(
+                  widget.client, eteCacheAccountEncryptionKey);
+
+              await etebase.logout();
+              await cacheClient.clearUser();
+
+              if (context.mounted) {
+                Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (BuildContext context) => AccountLoadPage(
+                              client: widget.client,
+                              serverUri: serverUri,
+                            )));
+              }
+            },
+            child: const Text("Sign out")),
+      ])),
+      FutureBuilder<Map<String, dynamic>?>(
+          future: accountInfo,
+          builder: (BuildContext context,
+              AsyncSnapshot<Map<String, dynamic>?> snapshot) {
+            if (!snapshot.hasData) {
+              return const Column(children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.only(right: 24.0),
+                      child: Text("Fetching cache configuration."),
+                    ),
+                    CircularProgressIndicator(),
+                  ],
+                )
+              ]);
+            }
+            final cacheDir = snapshot.data!["cacheDir"]!;
+            final username = snapshot.data!["username"]!;
+            return FutureBuilder<Map<String, dynamic>?>(
+                future: collections,
+                builder: (BuildContext context,
+                    AsyncSnapshot<Map<String, dynamic>?> snapshot) {
+                  if (snapshot.hasData) {
+                    final items = snapshot.data!["items"]
+                        as Map<EtebaseCollection, Map<String, dynamic>>;
+                    final collItems = (items.values
+                        .where((element) => !element["itemIsDeleted"])
+                        .map((element) => buildCollectionListTile(
+                            element, cacheDir, username, context))
+                        .toList());
+                    return Column(children: collItems);
+                  } else {
+                    return const Column(children: [
+                      Text("Loading collection UIDs"),
+                      CircularProgressIndicator()
+                    ]);
+                  }
+                });
+          }),
+    ]));
   }
 
   /// Returns widgets for date selection
@@ -847,19 +915,17 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                 ? MainAxisAlignment.end
                 : MainAxisAlignment.start,
             children: <Widget>[
+              Row(
+                children: [
                   dateForLogicStart != null
                       ? Chip(
                           label: RichText(
                               text: TextSpan(children: [
                           TextSpan(
-                              text: dateForLogicStart != null
-                                  ? (DateUtils.isSameDay(
-                                          dateForLogicStart, today)
-                                      ? (DateFormat.Hm())
-                                          .format(dateForLogicStart)
-                                      : DateFormat.yMd()
-                                          .format(dateForLogicStart))
-                                  : null,
+                              text: (DateUtils.isSameDay(
+                                      dateForLogicStart, today)
+                                  ? (DateFormat.Hm()).format(dateForLogicStart)
+                                  : DateFormat.yMd().format(dateForLogicStart)),
                               style: const TextStyle(color: Colors.black87)),
                           const WidgetSpan(
                               child: Icon(
@@ -886,14 +952,20 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                         ),
                         alignment: PlaceholderAlignment.middle)
                   ]))),
-                ] +
-                (compTodo.categories
-                        ?.map((e) => Chip(
-                              label: Text(e),
-                              visualDensity: VisualDensity.compact,
-                            ))
-                        .toList() ??
-                    [])),
+                ],
+              ),
+              const VerticalDivider(),
+              Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  mainAxisSize: MainAxisSize.max,
+                  children: (compTodo.categories
+                          ?.map((e) => Chip(
+                                label: Text(e),
+                                visualDensity: VisualDensity.compact,
+                              ))
+                          .toList() ??
+                      []))
+            ]),
         trailing: IconButton(
           icon: Icon(icalendar.todo!.recurrenceRule != null
               ? Icons.repeat
@@ -910,9 +982,10 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                     await onPressedToggleCompletion(
                             eteItem, icalendar!, itemManager, compTodo)
                         .then((value) async {
-                      final username = await getUsernameInCacheDir();
                       final cacheClient = await EtebaseFileSystemCache.create(
-                          client, await getCacheDir(), username);
+                          widget.client,
+                          await getCacheDir(),
+                          await getUsernameInCacheDir());
                       final colUid = await getCollectionUIDInCacheDir();
                       await cacheClient.itemSet(
                           itemManager, colUid, value["item"]);
@@ -965,9 +1038,10 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                           print("------END returned from server ---------");
                         }
 
-                        final username = await getUsernameInCacheDir();
                         final cacheClient = await EtebaseFileSystemCache.create(
-                            client, await getCacheDir(), username);
+                            widget.client,
+                            await getCacheDir(),
+                            await getUsernameInCacheDir());
                         final colUid = await getCollectionUIDInCacheDir();
                         await cacheClient.itemSet(
                             itemManager, colUid, itemUpdatedFromServer);

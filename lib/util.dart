@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:developer' as dev;
-import 'dart:typed_data';
+import 'dart:isolate';
+
 import 'package:enough_icalendar/enough_icalendar.dart';
 import 'package:etebase_flutter/etebase_flutter.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:logging/logging.dart';
 import 'package:path_provider/path_provider.dart';
@@ -91,32 +93,37 @@ Future<List> getItemManager() async {
     client = await getEtebaseClient();
   } on EtebaseException catch (e) {
     if (e.code == EtebaseErrorCode.urlParse) {
-      return [null, null, null, null, serverUri];
+      return [null, null, null, null, serverUri, null];
     }
     rethrow;
   }
-
-  final cacheDir = await getCacheDir();
+  ReceivePort myReceivePort = ReceivePort();
+  RootIsolateToken rootIsolateToken = RootIsolateToken.instance!;
+  await Isolate.spawn<List>((args) async {
+    final SendPort mySendPort = args[0];
+    final RootIsolateToken rootIsolateToken = args[1];
+    BackgroundIsolateBinaryMessenger.ensureInitialized(rootIsolateToken);
+    final cacheDir = await getCacheDir();
+    mySendPort.send(cacheDir);
+  }, [myReceivePort.sendPort, rootIsolateToken]);
+  final cacheDir = await myReceivePort.first;
 
   if (!Directory(cacheDir).existsSync()) {
-    return [client, null, null, null, serverUri];
+    return [client, null, null, null, serverUri, null];
   }
 
   late final String username;
   try {
     username = await getUsernameInCacheDir();
   } catch (error) {
-    return [client, null, null, null, serverUri];
+    return [client, null, null, null, serverUri, null];
   }
-  print("got username");
-
   const secureStorage = FlutterSecureStorage();
 
   final eteCacheAccountEncryptionKey = await secureStorage
           .read(key: eteCacheAccountEncryptionKeyString)
           .then((value) => value != null ? base64Decode(value) : value)
       as Uint8List?;
-
   final cacheClient =
       await EtebaseFileSystemCache.create(client, cacheDir, username);
 
@@ -125,11 +132,13 @@ Future<List> getItemManager() async {
     etebase =
         await cacheClient.loadAccount(client, eteCacheAccountEncryptionKey);
   } catch (error) {
-    return [client, null, null, null, serverUri];
+    return [client, null, null, null, serverUri, cacheClient];
   }
   final collUid = await getCollectionUIDInCacheDir();
 
   final collectionManager = await etebase.getCollectionManager();
+  //final collection =
+  //    await cacheClient.collectionGet(collectionManager, collUid);
   final collection = await collectionManager.fetch(collUid);
   await cacheClient.collectionSet(collectionManager, collection);
 
@@ -140,13 +149,13 @@ Future<List> getItemManager() async {
     itemManager,
     collUid,
     (await collection.getMeta()).name,
-    serverUri
+    serverUri,
+    cacheClient,
   ];
 }
 
 Future<Map<String, dynamic>> getItemListResponse(
     EtebaseItemManager itemManager, EtebaseClient client, String colUid) async {
-  print("passed in colUid: ${colUid}");
   bool done = false;
   String? stoken;
   Map<String, dynamic> theMap = {};
@@ -199,7 +208,7 @@ Future<Map<String, dynamic>> getItemListResponse(
       "itemContent": await item.getContent()
     };
   }
-
+  //final itemsToPutInCache = [];
   while (!done) {
     late final EtebaseItemListResponse rawItemList;
 
@@ -221,6 +230,7 @@ Future<Map<String, dynamic>> getItemListResponse(
     done = await rawItemList.isDone();
 
     for (final item in itemList) {
+      //itemsToPutInCache.add(item);
       await cacheClient.itemSet(itemManager, colUid, item);
       final itemUid = await item.getUid();
       for (final elementKeyInMap
@@ -237,10 +247,21 @@ Future<Map<String, dynamic>> getItemListResponse(
       };
     }
   }
+
   if (stoken != null) {
     await cacheClient.collectionSaveStoken(colUid, stoken);
   }
 
+  return theMap;
+}
+
+Future<Map<String, dynamic>> getCacheConfigInfo(EtebaseClient client) async {
+  final username = await getUsernameInCacheDir();
+  final cacheDir = await getCacheDir();
+
+  Map<String, dynamic> theMap = {};
+  theMap["cacheDir"] = cacheDir;
+  theMap["username"] = username;
   return theMap;
 }
 
@@ -268,6 +289,8 @@ Future<Map<String, dynamic>> getCollections(EtebaseClient client,
 
   Map<String, dynamic> theMap = {};
   theMap["items"] = <EtebaseCollection, Map<String, dynamic>>{};
+  theMap["username"] = username;
+  theMap["cacheDir"] = cacheDir;
 
   bool done = false;
 
@@ -284,6 +307,7 @@ Future<Map<String, dynamic>> getCollections(EtebaseClient client,
       "itemColor": (await item.getMeta()).color,
     };
   }
+
   while (!done) {
     EtebaseCollectionListResponse rawItemList = await collManager.list(
         "etebase.vtodo",
@@ -295,6 +319,7 @@ Future<Map<String, dynamic>> getCollections(EtebaseClient client,
 
     for (final item in itemList) {
       await cacheClient.collectionSet(collManager, item);
+
       final itemUid = await item.getUid();
       for (final elementKeyInMap
           in (theMap["items"] as Map<EtebaseCollection, Map<String, dynamic>>)
@@ -316,6 +341,7 @@ Future<Map<String, dynamic>> getCollections(EtebaseClient client,
   if (stoken != null) {
     await cacheClient.saveStoken(stoken);
   }
+
   return theMap;
   //return (theMap["items"] as Map<EtebaseCollection, Map<String, dynamic>>)
   //    .keys
