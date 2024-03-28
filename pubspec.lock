@@ -65,14 +65,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.3"
-  cupertino_icons:
-    dependency: "direct main"
-    description:
-      name: cupertino_icons
-      sha256: d57953e10f9f8327ce64a508a355f0b1ec902193f66288e8cb5070e7c47eeb2d
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.0.6"
   datetime_picker_formfield_new:
     dependency: "direct main"
     description:
@@ -101,18 +93,18 @@ packages:
     dependency: transitive
     description:
       name: etebase
-      sha256: "30f00d5af29e6533d71878d54b9e129fa4b8ece0851dee4ec4f4a4843fd5b802"
+      sha256: b08c5344c34ff930287c607789b7e0e4eb54c720728c5408f86f0357908268b3
       url: "https://pub.dev"
     source: hosted
-    version: "1.0.2"
+    version: "1.0.3"
   etebase_flutter:
     dependency: "direct main"
     description:
       name: etebase_flutter
-      sha256: f24813e558d69bd804cdf887e11647fc3ac9493dff5089957b276e4e7b638822
+      sha256: "8c03e8652d6f22ec0560e3a3834ff369f11d5b62d16658795acf0dbb94c71b1c"
       url: "https://pub.dev"
     source: hosted
-    version: "1.1.0"
+    version: "1.1.1"
   fake_async:
     dependency: transitive
     description:
@@ -166,6 +158,11 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.1"
+  flutter_localizations:
+    dependency: "direct main"
+    description: flutter
+    source: sdk
+    version: "0.0.0"
   flutter_secure_storage:
     dependency: "direct main"
     description:
@@ -320,6 +317,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.11.0"
+  nested:
+    dependency: transitive
+    description:
+      name: nested
+      sha256: "03bac4c528c64c95c722ec99280375a6f2fc708eec17c7b3f07253b626cd2a20"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.0"
   path:
     dependency: transitive
     description:
@@ -400,6 +405,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.0"
+  provider:
+    dependency: "direct main"
+    description:
+      name: provider
+      sha256: c8a055ee5ce3fd98d6fc872478b03823ffdb448699c6ebdbbc71d59b596fd48c
+      url: "https://pub.dev"
+    source: hosted
+    version: "6.1.2"
   rrule:
     dependency: "direct main"
     description:

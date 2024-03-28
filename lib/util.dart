@@ -5,8 +5,10 @@ import 'dart:isolate';
 
 import 'package:enough_icalendar/enough_icalendar.dart';
 import 'package:etebase_flutter/etebase_flutter.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:intl/intl.dart';
 import 'package:logging/logging.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:rrule/rrule.dart';
@@ -17,8 +19,6 @@ Future<String> getCacheDir() async {
       "${(await getApplicationSupportDirectory()).path}/ete_sync_fs_cache";
   return value;
 }
-
-//String cacheDir = "${Directory.current.path}/ete_sync_fs_cache";
 
 const eteCacheAccountEncryptionKeyString = "eteCacheAccountEncryptionKey";
 
@@ -62,6 +62,23 @@ Future<String> getCollectionUIDInCacheDir() async {
     }
     throw Exception("Too many collections to naively pick.");
   }
+}
+
+Future<Locale> getPrefLocale() async {
+  final Future<SharedPreferences> prefsInstance =
+      SharedPreferences.getInstance();
+  final SharedPreferences prefs = await prefsInstance;
+
+  final theCurrentLocale =
+      (prefs.getString("locale")) ?? Intl.getCurrentLocale();
+  final theCurrentCountryCode = prefs.getString("countryCode") ??
+      (prefs.getString("locale") != null
+          ? null
+          : (theCurrentLocale.contains("_")
+              ? theCurrentLocale.split("_")[1]
+              : null));
+
+  return Locale(theCurrentLocale, theCurrentCountryCode);
 }
 
 Future<Uri?> getServerUri() async {
@@ -137,13 +154,14 @@ Future<List> getItemManager() async {
   final collUid = await getCollectionUIDInCacheDir();
 
   final collectionManager = await etebase.getCollectionManager();
-  //final collection =
-  //    await cacheClient.collectionGet(collectionManager, collUid);
+
   final collection = await collectionManager.fetch(collUid);
   await cacheClient.collectionSet(collectionManager, collection);
 
   final itemManager = await collectionManager.getItemManager(collection);
+
   await cacheClient.dispose();
+
   return [
     client,
     itemManager,
@@ -433,180 +451,19 @@ class ItemMapWrapper {
   ItemMapWrapper(
       {required this.item, required this.value, required this.icalendar});
 }
-/*
-Recurrence initRRule(String recurrence) {
-  final rrule = Recurrence.parse(recurrence);
-              if (rrule.frequency != RecurrenceFrequency.weekly && rrule.frequency != RecurrenceFrequency.monthly) {
-                rrule.byWeekDay?.clear();
-                rrule.byMonthDay?.clear();
-                
-            }
-            return rrule;
-  }
 
-  Future<void> handleRepeat(VTodo todo) async {
-final recurrence = todo.recurrenceRule;
-if (recurrence == null) {
-  return;
-  }
-  final repeatAfterCompletion = true; // todo.repeatAfterCompletion();
-  final rrule = initRRule(recurrence.toString());
-              final count = rrule.count;
-            if (count == 1) {
-                //broadcastCompletion(task)
-                return;
-            }
-                        final newDueDate = computeNextDueDate(todo, recurrence.toString(), repeatAfterCompletion)
-            if (newDueDate == -1) {
-                return;
-            }
+class LocaleModel extends ChangeNotifier {
+  Locale locale = Locale(Intl.getCurrentLocale());
+
+  LocaleModel({Locale? initialLocale}) {
+    if (initialLocale != null && locale != initialLocale) {
+      locale = initialLocale;
     }
+  }
 
+  void set(Locale newLocale) {
+    locale = newLocale;
 
-            int computeNextDueDate(VTodo task, String recurrence, bool repeatAfterCompletion) {
-            final rrule = initRRule(recurrence);
-
-            // initialize startDateAsDV
-            final original = setUpStartDate(task, repeatAfterCompletion, rrule.frequency);
-            final startDateAsDV = setUpStartDateAsDV(task, original);
-             
-            if (rrule.frequency == RecurrenceFrequency.hourly || rrule.frequency == RecurrenceFrequency.minutely) {
-                return handleSubdayRepeat(original, rrule);
-            } else if (rrule.frequency == RecurrenceFrequency.weekly && (rrule.byWeekDay ?? rrule.byMonthDay ?? []).isNotEmpty  && repeatAfterCompletion) {
-                return handleWeeklyRepeatAfterComplete(rrule, original, task.due != null);
-            } else if (rrule.frequency == RecurrenceFrequency.monthly && (rrule.byWeekDay ?? rrule.byMonthDay ?? []).isNotEmpty) {
-                return handleMonthlyRepeat(original, startDateAsDV, task.due != null, rrule);
-            } else {
-                return invokeRecurrence(rrule, original, startDateAsDV, task.recurrenceRule!);
-            }
-        }
-
-
-        int invokeRecurrence(Recurrence recur, DateTime original, DateTime startDateAsDV) {
-            final nextDateMaybe = recur.getNextDate(startDateAsDV, startDateAsDV, recur);
-
-                return buildNewDueDate(original, nextDateMaybe!);
-
-        }
-
-        DateTime getNextDate(DateTime seed, DateTime startDateAsDV, Recurrence recur) {
-
-          RecurrenceRule(Frequency((recur.frequency.index - 6).abs(), recur.frequency.name), until: recur.until, count: recur.count, interval: recur.interval, bySeconds: recur.bySecond, byMinutes: recur.byMinute, byHours: recur.byHour ?? [], byWeekDays: recur.byWeekDay ?? [], byMonthDays: recur.byMonthDay ?? [], byYearDays: recur.byYearDay ?? [], byWeeks: recur.byWeek ?? [], byMonth: recur.byMonth ?? [])
-          }
-
-
-        DateTime setUpStartDate(
-                VTodo task, bool repeatAfterCompletion, RecurrenceFrequency frequency) {
-            if (repeatAfterCompletion) {
-                var startDate = task.completed != null ? task.completed!.copyWith() : DateTime.now();
-                if (task.due != null && frequency != RecurrenceFrequency.hourly && frequency != RecurrenceFrequency.minutely) {
-                    final dueDate = task.due!.copyWith();
-                    startDate = startDate
-                            .copyWith(hour: dueDate.hour, minute: dueDate.minute, second: dueDate.second);
-                }
-                return startDate;
-            } else {
-                if (task.due != null) {return task.due!.copyWith();} else {return DateTime.now();}
-            }
-        }
-
-
-        DateTime setUpStartDateAsDV(VTodo task, DateTime startDate) {
-            if (task.due != null) {
-                return startDate.copyWith();
-            } else {
-                return startDate.copyWith(hour: 0, minute: 0, second: 0);
-            }
-        }
-
-
-        int handleWeeklyRepeatAfterComplete(
-                Recurrence recur, DateTime original, bool hasDueTime) {
-            final byDay = recur.byWeekDay;
-            var newDate = original.millisecond;
-            
-            newDate += 3600000 * 24 * 7 * ((recur.interval < 1 ? 1 : recur.interval) - 1);
-            var date = DateTime.fromMillisecondsSinceEpoch(newDate);
-            
-            byDay?.sort((a, b) => convertToSundayFirst(a.toString()) - convertToSundayFirst(b.toString()));
-            final next = findNextWeekday(byDay!.map((value) => value.weekday).toList(), date);
-            date = date.add(Duration(days: 1));            
-            while (date.weekday != next) {
-              date = date.add(Duration(days: 1));            
-              }
-            final timeT = date.millisecondsSinceEpoch;
-            if (hasDueTime) {
-                return createDueDate(8, timeT);
-            } else {
-                return createDueDate(7, timeT);
-            }
-        }
-
-        int createDueDate(int setting, int customDate) {
-          int date = 0;
-            switch (setting) {
-                case 0: date = 0 ;break;
-                case 1: date = DateTime.now().millisecondsSinceEpoch ;break;
-                case 2: date = DateTime.now().add(Duration(days: 1)).millisecondsSinceEpoch 
-;break;                case 3: date = DateTime.now().add(Duration(days: 2)).millisecondsSinceEpoch ;break;
-                case 4: date = DateTime.now().add(Duration(days: 7)).millisecondsSinceEpoch ;break;
-                case 5: DateTime.now().add(Duration(days: 14)).millisecondsSinceEpoch ; break;
-                case 6:
-                case 7: date = customDate; break;
-            }
-            if (date <= (0 )) {
-                return date;
-            }
-            var dueDate = DateTime.fromMillisecondsSinceEpoch(date).copyWith(millisecond: 0);
-            if (setting != 8) {
-                dueDate = dueDate
-                        .copyWith(hour: 12, minute:0, second: 0) // Seconds == 0 means no due time
-            } else {
-                dueDate = dueDate.copyWith(second: 1) // Seconds > 0 means due time exists
-            }
-            return dueDate.millisecondsSinceEpoch;
-        }
-
-        int sundayAsFirst(int day) {
-          int adjustedDay = day + 1;
-          return adjustedDay % DateTime.daysPerWeek;
-          }
-
-        int findNextWeekday(List<int> byDay, DateTime date) {
-            final next = byDay[0];
-            for (final weekday in byDay) {
-              if (sundayAsFirst(weekday) > sundayAsFirst(date.weekday)) {
-                return weekday;
-                }
-            }
-            return next;
-        }
-
-        int convertToSundayFirst(String item) {
-          int converted = -1;
-          switch (item) {
-            case "SU":
-            converted = 1;
-            break;
-            case "MO":
-            converted = 2;
-            break;
-            case "TU":
-            converted = 3;
-            break;
-            case "WE":
-            converted = 4;
-            break;
-            case "TH":
-            converted = 5;
-            break;
-            case "FR":
-            converted = 6;
-            break;
-            default:
-            converted = 7;
-            break;
-            }
-            return converted;
-          }*/
-
+    notifyListeners();
+  }
+}

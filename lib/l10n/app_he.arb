@@ -1,0 +1,10 @@
+{
+  "hideUntilDue": "עד ה",
+  "hideUntilDueTime": "מועד הביצוע",
+  "hideUntilDayBefore": "יום לפני מועד היעד",
+  "hideUntilWeekBefore": "שבוע לפני מועד היעד",
+  "hideUntilSpecificDay": "יום מועד",
+  "hideUntilSpecificDayTime": "יום וזמן מועדים",
+  "hideUntilNone": "אין תאריך התחלה",
+  "language": "שפה"
+}

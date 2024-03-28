@@ -1,0 +1,13 @@
+{
+  "hideUntilDue": "Due date",
+  "@hideUntilDue": {
+    "description": "Todo start time set to due date"
+  },
+  "hideUntilDueTime": "Due time",
+  "hideUntilDayBefore": "Day Before Due",
+  "hideUntilWeekBefore": "Week Before Due",
+  "hideUntilSpecificDay": "Specific Day",
+  "hideUntilSpecificDayTime": "Specific Day and Time",
+  "hideUntilNone": "No start date",
+  "language": "Language"
+}

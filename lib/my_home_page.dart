@@ -11,8 +11,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import 'package:rrule/rrule.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_gen/gen_l10n/app_localizations.dart';
+
 import 'package:window_manager/window_manager.dart';
 
 class AccountLoadPage extends StatefulWidget {
@@ -260,11 +263,12 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
   @override
   void onWindowFocus() {
     final now = DateTime.now();
-    setState(() {
-      if (now.day != today.day) {
+
+    if (now.day != today.day) {
+      setState(() {
         today = now;
-      }
-    });
+      });
+    }
   }
 
   @override
@@ -290,78 +294,104 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<Map<String, dynamic>>(
-        future: _itemListResponse,
-        builder: (BuildContext context,
-            AsyncSnapshot<Map<String, dynamic>?> snapshot) {
-          List<Widget> children = [];
-          return Scaffold(
-            drawer: snapshot.hasData ? buildDrawer(context) : null,
-            appBar:
-                snapshot.hasData ? buildAppBar(context, snapshot.data!) : null,
-            floatingActionButton: FloatingActionButton(
-              onPressed: () async {
-                await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (BuildContext context) =>
-                                EtebaseItemCreateRoute(
-                                    itemManager: widget.itemManager,
-                                    client: widget.client)))
-                    .then((value) => _refreshIndicatorKey.currentState!.show());
-              },
-              tooltip: "Create task",
-              child: const Icon(Icons.add),
-            ),
-            body: RefreshIndicator(
-                key: _refreshIndicatorKey,
-                onRefresh: () async {
-                  setState(() {
-                    _itemListResponse = getItemListResponse(
-                        widget.itemManager, widget.client, widget.colUid);
-                  });
-                  return _itemListResponse!.then((value) => null);
-                },
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    AutoDirection(
-                        text: _searchTextController.text,
-                        child: SearchBar(
-                          controller: _searchTextController,
-                          hintText: "Search",
-                          leading: _searchTextController.text.isEmpty
-                              ? const Icon(Icons.search)
-                              : IconButton(
-                                  icon: const Icon(Icons.close),
-                                  tooltip: "Clear",
-                                  onPressed: () {
-                                    setState(() {
-                                      _searchText = null;
-                                      _searchTextController.text = "";
-                                    });
-                                  },
-                                ),
-                          onSubmitted: (value) {
+    return Consumer<LocaleModel>(builder: (context, localeModel, child) {
+      return FutureBuilder<Map<String, dynamic>>(
+          future: _itemListResponse,
+          builder: (BuildContext context,
+              AsyncSnapshot<Map<String, dynamic>?> snapshot) {
+            List<Widget> children = [];
+            return Scaffold(
+              drawer:
+                  snapshot.hasData ? buildDrawer(context, localeModel) : null,
+              appBar: snapshot.hasData
+                  ? buildAppBar(context, snapshot.data!)
+                  : null,
+              floatingActionButton: !snapshot.hasData
+                  ? null
+                  : FloatingActionButton(
+                      onPressed: () async {
+                        /*Locale nextLocale = Locale("en");
+                          if (Intl.getCurrentLocale() == "en") {
+                            nextLocale = Locale("he");
+                          }
+                          EteStateWidget.of(context).onLocaleChange(nextLocale);*/
+                        final itemListResponse = snapshot.data!;
+                        await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (BuildContext context) =>
+                                    EtebaseItemCreateRoute(
+                                        itemManager: widget.itemManager,
+                                        client: widget.client))).then((value) {
+                          if (value != null) {
+                            (itemListResponse["items"]!
+                                    as Map<EtebaseItem, Map<String, dynamic>>)[
+                                value["item"] as EtebaseItem] = {
+                              "itemContent": value["itemContent"],
+                              "itemUid": value["itemUid"],
+                              "itemIsDeleted": value["itemIsDeleted"]
+                            };
                             setState(() {
+                              _itemListResponse =
+                                  Future<Map<String, dynamic>>.value(
+                                      itemListResponse);
+                            });
+                          }
+                        });
+                      },
+                      tooltip: "Create task",
+                      child: const Icon(Icons.add),
+                    ),
+              body: RefreshIndicator(
+                  key: _refreshIndicatorKey,
+                  onRefresh: () async {
+                    setState(() {
+                      _itemListResponse = getItemListResponse(
+                          widget.itemManager, widget.client, widget.colUid);
+                    });
+                    return _itemListResponse!.then((value) => null);
+                  },
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      AutoDirection(
+                          text: _searchTextController.text,
+                          child: SearchBar(
+                            controller: _searchTextController,
+                            hintText: "Search",
+                            leading: _searchTextController.text.isEmpty
+                                ? const Icon(Icons.search)
+                                : IconButton(
+                                    icon: const Icon(Icons.close),
+                                    tooltip: "Clear",
+                                    onPressed: () {
+                                      setState(() {
+                                        _searchText = null;
+                                        _searchTextController.text = "";
+                                      });
+                                    },
+                                  ),
+                            onSubmitted: (value) {
+                              setState(() {
+                                _searchText = value;
+                                _searchTextController.text = value;
+                              });
+                            },
+                            onChanged: (value) => setState(() {
                               _searchText = value;
                               _searchTextController.text = value;
-                            });
-                          },
-                          onChanged: (value) => setState(() {
-                            _searchText = value;
-                            _searchTextController.text = value;
-                          }),
-                        )),
-                    buildExpansionTileTaskFinishedFilters(
-                        getDateSelectionWidgets(context)),
-                    buildMainContent(context, snapshot, children),
-                  ],
-                )),
-          );
-        });
+                            }),
+                          )),
+                      buildExpansionTileTaskFinishedFilters(
+                          getDateSelectionWidgets(context)),
+                      buildMainContent(context, snapshot, children),
+                    ],
+                  )),
+            );
+          });
+    });
   }
 
   Widget buildMainContent(BuildContext context,
@@ -576,12 +606,74 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     );
   }
 
-  Drawer buildDrawer(BuildContext context) {
+  Drawer buildDrawer(BuildContext context, LocaleModel localeModel) {
     return Drawer(
         child: ListView(children: [
       DrawerHeader(
           child: Column(children: [
         const Text("Collection List"),
+        ListTile(
+          onTap: () async {
+            String currentLanguageCode = localeModel.locale.languageCode;
+            String? currentCountryCode = localeModel.locale.countryCode;
+
+            await showDialog(
+                context: context,
+                builder: (BuildContext context) {
+                  return AlertDialog(
+                    content: Column(
+                        children: AppLocalizations.supportedLocales
+                            .map((e) => ListTile(
+                                  title: Text(e.languageCode),
+                                  leading: Locale.fromSubtags(
+                                                  languageCode:
+                                                      currentLanguageCode,
+                                                  countryCode:
+                                                      currentCountryCode)
+                                              .languageCode ==
+                                          e.languageCode
+                                      ? const Icon(Icons.check)
+                                      : null,
+                                  onTap: () async {
+                                    final Future<SharedPreferences>
+                                        prefsInstance =
+                                        SharedPreferences.getInstance();
+                                    final SharedPreferences prefs =
+                                        await prefsInstance;
+                                    await prefs.setString(
+                                        "locale", e.languageCode);
+                                    if (e.countryCode != null) {
+                                      await prefs.setString(
+                                          "countryCode", e.countryCode!);
+                                    } else if (prefs.getString("countryCode") !=
+                                        null) {
+                                      await prefs.remove("countryCode");
+                                    }
+
+                                    if (e.languageCode != currentLanguageCode ||
+                                        e.countryCode != currentCountryCode) {
+                                      localeModel.set(e);
+                                    }
+                                    if (context.mounted) {
+                                      await Navigator.maybePop(context);
+                                    }
+                                  },
+                                ))
+                            .toList()),
+                    actions: [
+                      TextButton(
+                        child: const Text("Done"),
+                        onPressed: () async {
+                          await Navigator.maybePop(context);
+                        },
+                      )
+                    ],
+                  );
+                });
+          },
+          title: Text(AppLocalizations.of(context)!.language),
+          trailing: const Icon(Icons.language),
+        ),
         TextButton(
             onPressed: () async {
               final Future<SharedPreferences> prefsInstance =
