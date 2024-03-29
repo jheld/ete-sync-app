@@ -3,6 +3,7 @@ import 'package:auto_direction/auto_direction.dart';
 import 'package:collection/collection.dart';
 import 'package:datetime_picker_formfield_new/datetime_picker_formfield.dart';
 import 'package:enough_icalendar/enough_icalendar.dart';
+import 'package:ete_sync_app/i_calendar_custom_parser.dart';
 import 'package:ete_sync_app/util.dart';
 import 'package:etebase_flutter/etebase_flutter.dart';
 import 'package:flutter/foundation.dart';
@@ -1606,13 +1607,15 @@ class _RevisionStatefulWidgetState extends State<RevisionStatefulWidget> {
                         final diffing = SingleChildScrollView(
                           child: PrettyDiffText(
                             oldText: childrenSorted((VComponent.parse(
-                                utf8.decode(await diffSorted[0]
-                                    .revision
-                                    .getContent())) as VCalendar)),
+                                utf8.decode(
+                                    await diffSorted[0].revision.getContent()),
+                                customParser:
+                                    iCalendarCustomParser) as VCalendar)),
                             newText: childrenSorted((VComponent.parse(
-                                utf8.decode(await diffSorted[1]
-                                    .revision
-                                    .getContent())) as VCalendar)),
+                                utf8.decode(
+                                    await diffSorted[1].revision.getContent()),
+                                customParser:
+                                    iCalendarCustomParser) as VCalendar)),
                           ),
                         );
                         if (context.mounted) {
