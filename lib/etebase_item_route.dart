@@ -1549,17 +1549,6 @@ class _RevisionStatefulWidgetState extends State<RevisionStatefulWidget> {
                 toDiff.remove(element);
               } else {
                 toDiff.add(element);
-
-                toDiff.sort((a, b) {
-                  final compared = a.mtime!.compareTo(b.mtime!);
-                  if (compared < 0) {
-                    return -1 * compared;
-                  } else if (compared == 0) {
-                    return compared;
-                  } else {
-                    return -1 * compared;
-                  }
-                });
               }
             });
           },
@@ -1609,16 +1598,21 @@ class _RevisionStatefulWidgetState extends State<RevisionStatefulWidget> {
               ? [
                   IconButton(
                       onPressed: () async {
+                        final diffSorted = toDiff.sorted((a, b) {
+                          final compared = a.mtime!.compareTo(b.mtime!);
+                          return compared;
+                        });
+
                         final diffing = SingleChildScrollView(
                           child: PrettyDiffText(
                             oldText: childrenSorted((VComponent.parse(
-                                    utf8.decode(
-                                        await toDiff[0].revision.getContent()))
-                                as VCalendar)),
+                                utf8.decode(await diffSorted[0]
+                                    .revision
+                                    .getContent())) as VCalendar)),
                             newText: childrenSorted((VComponent.parse(
-                                    utf8.decode(
-                                        await toDiff[1].revision.getContent()))
-                                as VCalendar)),
+                                utf8.decode(await diffSorted[1]
+                                    .revision
+                                    .getContent())) as VCalendar)),
                           ),
                         );
                         if (context.mounted) {
