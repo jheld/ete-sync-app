@@ -229,7 +229,7 @@ Future<Map<String, dynamic>> getItemListResponse(
   //final itemsToPutInCache = [];
   while (!done) {
     late final EtebaseItemListResponse rawItemList;
-
+    bool loopAgainSpecial = false;
     try {
       rawItemList = await itemManager.list(EtebaseFetchOptions(
           stoken: theMap["items"].isNotEmpty ? stoken : null, limit: 50));
@@ -237,11 +237,14 @@ Future<Map<String, dynamic>> getItemListResponse(
       switch (e.code) {
         case EtebaseErrorCode.generic:
           if (e.message == "operation timed out") {
-            continue;
+            loopAgainSpecial = true;
           }
         default:
           rethrow;
       }
+    }
+    if (loopAgainSpecial) {
+      continue;
     }
     List<EtebaseItem> itemList = await (rawItemList).getData();
     stoken = await rawItemList.getStoken();

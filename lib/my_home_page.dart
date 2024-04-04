@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:auto_direction/auto_direction.dart';
 import 'package:enough_icalendar/enough_icalendar.dart';
+
 import 'package:ete_sync_app/etebase_item_route.dart';
 import 'package:ete_sync_app/i_calendar_custom_parser.dart';
 import 'package:ete_sync_app/util.dart';
@@ -93,28 +94,34 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
 
   Future<void> loginValidationSubmit(BuildContext context) async {
     if (_formKey.currentState!.validate()) {
+      bool encounteredError = false;
       final client = await EtebaseClient.create(
           "ete_sync_client", Uri.parse(serverUrlController.text));
-      final Future<SharedPreferences> prefsInstance =
-          SharedPreferences.getInstance();
-      final SharedPreferences prefs = await prefsInstance;
-      await prefs.setString(
-          "ete_base_url", Uri.parse(serverUrlController.text).toString());
-
-      //final client = widget.client;
-      bool encounteredError = false;
       late final EtebaseAccount etebase;
-      try {
-        etebase = await EtebaseAccount.login(
-            client, usernameController.text, passwordController.text);
-      } on EtebaseException catch (e) {
-        if (kDebugMode) {
-          print(e);
-        }
+      if (!(await client.checkEtebaseServer())) {
         encounteredError = true;
         _formKey.currentState!.reset();
+      } else {
+        final Future<SharedPreferences> prefsInstance =
+            SharedPreferences.getInstance();
+        final SharedPreferences prefs = await prefsInstance;
+        await prefs.setString(
+            "ete_base_url", Uri.parse(serverUrlController.text).toString());
 
-        //if (e.code == EtebaseErrorCode.unauthorized) {}
+        //final client = widget.client;
+
+        try {
+          etebase = await EtebaseAccount.login(
+              client, usernameController.text, passwordController.text);
+        } on EtebaseException catch (e) {
+          if (kDebugMode) {
+            print(e);
+          }
+          encounteredError = true;
+          _formKey.currentState!.reset();
+
+          //if (e.code == EtebaseErrorCode.unauthorized) {}
+        }
       }
 
       if (!encounteredError) {
@@ -253,10 +260,16 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
 
   Future<Map<String, dynamic>>? accountInfo;
 
+  Timer? refreshTimer;
+
+  final Duration timerRefreshDuration = const Duration(minutes: 5);
+
   @override
   void dispose() {
     widget.client.dispose();
     windowManager.removeListener(this);
+    refreshTimer?.cancel();
+
     super.dispose();
   }
 
@@ -290,6 +303,12 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       collections = getCollections(widget.client);
       accountInfo = getCacheConfigInfo(widget.client);
     });
+    refreshTimer = Timer.periodic(timerRefreshDuration, (timer) {
+      setState(() {
+        _itemListResponse = getItemListResponse(
+            widget.itemManager, widget.client, widget.colUid);
+      });
+    });
   }
 
   @override
@@ -316,6 +335,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                           }
                           EteStateWidget.of(context).onLocaleChange(nextLocale);*/
                         final itemListResponse = snapshot.data!;
+                        refreshTimer?.cancel();
                         await Navigator.push(
                             context,
                             MaterialPageRoute(
@@ -337,6 +357,15 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                                       itemListResponse);
                             });
                           }
+                        });
+                        refreshTimer =
+                            Timer.periodic(timerRefreshDuration, (timer) {
+                          setState(() {
+                            _itemListResponse = getItemListResponse(
+                                widget.itemManager,
+                                widget.client,
+                                widget.colUid);
+                          });
                         });
                       },
                       tooltip: "Create task",
@@ -474,133 +503,148 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     return AppBar(
       backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       title: Text(widget.title),
-      actions: _selectedTasks.isNotEmpty
+      actions: true
           ? [
-              IconButton(
-                  onPressed: () async {
-                    bool anyWereChanged = false;
-                    final cacheClient = await EtebaseFileSystemCache.create(
-                        widget.client,
-                        await getCacheDir(),
-                        await getUsernameInCacheDir());
+              if (_selectedTasks.isNotEmpty)
+                IconButton(
+                    onPressed: () async {
+                      bool anyWereChanged = false;
+                      final cacheClient = await EtebaseFileSystemCache.create(
+                          widget.client,
+                          await getCacheDir(),
+                          await getUsernameInCacheDir());
 
-                    final colUid = await getCollectionUIDInCacheDir();
-                    for (var entry in _selectedTasks.entries.toList()) {
-                      final item = entry.value;
-                      final eteItem = item.item;
-                      final icalendar = item.icalendar;
-                      final itemManager = widget.itemManager;
-                      final compTodo = icalendar.todo!;
-                      if ([TodoStatus.completed, TodoStatus.cancelled]
-                          .contains(compTodo.status)) {
-                        return;
-                      }
-                      try {
-                        if (context.mounted) {
-                          await onPressedModifyDueDate(eteItem, icalendar,
-                                  itemManager, compTodo, context)
-                              .then((value) async {
-                            if (value == null) {
-                              return value;
-                            } else {
-                              anyWereChanged = true;
-                            }
-
-                            await cacheClient.itemSet(
-                                itemManager, colUid, value["item"]);
-
-                            _selectedTasks.remove(entry.key);
-
-                            (itemListResponse["items"]! as Map).remove(eteItem);
-                            (itemListResponse["items"]!
-                                    as Map<EtebaseItem, Map<String, dynamic>>)[
-                                value["item"] as EtebaseItem] = {
-                              "itemContent": value["itemContent"],
-                              "itemUid": value["itemUid"],
-                              "itemIsDeleted": value["itemIsDeleted"]
-                            };
-                            setState(() {
-                              _itemListResponse =
-                                  Future<Map<String, dynamic>>.value(
-                                      itemListResponse);
-                            });
-                            return value;
-                          });
+                      final colUid = await getCollectionUIDInCacheDir();
+                      for (var entry in _selectedTasks.entries.toList()) {
+                        final item = entry.value;
+                        final eteItem = item.item;
+                        final icalendar = item.icalendar;
+                        final itemManager = widget.itemManager;
+                        final compTodo = icalendar.todo!;
+                        if ([TodoStatus.completed, TodoStatus.cancelled]
+                            .contains(compTodo.status)) {
+                          return;
                         }
-                      } on Exception catch (error, stackTrace) {
-                        if (kDebugMode) {
-                          print(stackTrace);
-                          print(error);
-                        }
-
-                        if (error is EtebaseException) {
+                        try {
                           if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                              content: Text(error.message),
-                              duration: const Duration(seconds: 5),
-                              action: SnackBarAction(
-                                label: 'OK',
-                                onPressed: () async {
-                                  ScaffoldMessenger.of(context)
-                                      .hideCurrentSnackBar();
-                                },
-                              ),
-                            ));
-                          }
-                          if (error.code == EtebaseErrorCode.conflict) {
-                            final itemUpdatedFromServer =
-                                await itemManager.fetch(await eteItem.getUid());
-                            final contentFromServer =
-                                await itemUpdatedFromServer.getContent();
-                            if (kDebugMode) {
-                              print(
-                                  "------BEGIN returned from server ---------");
-                              print(
-                                  "ETAG: ${await itemUpdatedFromServer.getEtag()}");
-                              print((VComponent.parse(
-                                          utf8.decode(contentFromServer))
-                                      as VCalendar)
-                                  .toString());
-                              print("------END returned from server ---------");
-                            }
+                            refreshTimer?.cancel();
+                            await onPressedModifyDueDate(eteItem, icalendar,
+                                    itemManager, compTodo, context)
+                                .then((value) async {
+                              if (value == null) {
+                                return value;
+                              } else {
+                                anyWereChanged = true;
+                              }
 
-                            final cacheClient =
-                                await EtebaseFileSystemCache.create(
-                                    widget.client,
-                                    await getCacheDir(),
-                                    await getUsernameInCacheDir());
-                            final colUid = await getCollectionUIDInCacheDir();
-                            await cacheClient.itemSet(
-                                itemManager, colUid, itemUpdatedFromServer);
-                            await cacheClient.dispose();
+                              await cacheClient.itemSet(
+                                  itemManager, colUid, value["item"]);
 
-                            (itemListResponse["items"]! as Map).remove(eteItem);
+                              _selectedTasks.remove(entry.key);
 
-                            (itemListResponse["items"]!
-                                as Map)[itemUpdatedFromServer] = {
-                              "itemContent": contentFromServer,
-                              "itemUid": await itemUpdatedFromServer.getUid(),
-                              "itemIsDeleted":
-                                  await itemUpdatedFromServer.isDeleted(),
-                            };
-                            setState(() {
-                              _itemListResponse =
-                                  Future<Map<String, dynamic>>.value(
-                                      itemListResponse);
+                              (itemListResponse["items"]! as Map)
+                                  .remove(eteItem);
+                              (itemListResponse["items"]! as Map<EtebaseItem,
+                                      Map<String, dynamic>>)[
+                                  value["item"] as EtebaseItem] = {
+                                "itemContent": value["itemContent"],
+                                "itemUid": value["itemUid"],
+                                "itemIsDeleted": value["itemIsDeleted"]
+                              };
+                              setState(() {
+                                _itemListResponse =
+                                    Future<Map<String, dynamic>>.value(
+                                        itemListResponse);
+                              });
+                              return value;
                             });
+                            refreshTimer =
+                                Timer.periodic(timerRefreshDuration, (timer) {
+                              setState(() {
+                                _itemListResponse = getItemListResponse(
+                                    widget.itemManager,
+                                    widget.client,
+                                    widget.colUid);
+                              });
+                            });
+                          }
+                        } on Exception catch (error, stackTrace) {
+                          if (kDebugMode) {
+                            print(stackTrace);
+                            print(error);
+                          }
+
+                          if (error is EtebaseException) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context)
+                                  .showSnackBar(SnackBar(
+                                content: Text(error.message),
+                                duration: const Duration(seconds: 5),
+                                action: SnackBarAction(
+                                  label: 'OK',
+                                  onPressed: () async {
+                                    ScaffoldMessenger.of(context)
+                                        .hideCurrentSnackBar();
+                                  },
+                                ),
+                              ));
+                            }
+                            if (error.code == EtebaseErrorCode.conflict) {
+                              final itemUpdatedFromServer = await itemManager
+                                  .fetch(await eteItem.getUid());
+                              final contentFromServer =
+                                  await itemUpdatedFromServer.getContent();
+                              if (kDebugMode) {
+                                print(
+                                    "------BEGIN returned from server ---------");
+                                print(
+                                    "ETAG: ${await itemUpdatedFromServer.getEtag()}");
+                                print((VComponent.parse(
+                                            utf8.decode(contentFromServer))
+                                        as VCalendar)
+                                    .toString());
+                                print(
+                                    "------END returned from server ---------");
+                              }
+
+                              final cacheClient =
+                                  await EtebaseFileSystemCache.create(
+                                      widget.client,
+                                      await getCacheDir(),
+                                      await getUsernameInCacheDir());
+                              final colUid = await getCollectionUIDInCacheDir();
+                              await cacheClient.itemSet(
+                                  itemManager, colUid, itemUpdatedFromServer);
+                              await cacheClient.dispose();
+
+                              (itemListResponse["items"]! as Map)
+                                  .remove(eteItem);
+
+                              (itemListResponse["items"]!
+                                  as Map)[itemUpdatedFromServer] = {
+                                "itemContent": contentFromServer,
+                                "itemUid": await itemUpdatedFromServer.getUid(),
+                                "itemIsDeleted":
+                                    await itemUpdatedFromServer.isDeleted(),
+                              };
+                              setState(() {
+                                _itemListResponse =
+                                    Future<Map<String, dynamic>>.value(
+                                        itemListResponse);
+                              });
+                            }
                           }
                         }
                       }
-                    }
-                    if (anyWereChanged) {
-                      setState(() {
-                        _itemListResponse = getItemListResponse(
-                            widget.itemManager, widget.client, widget.colUid);
-                      });
-                    }
-                    await cacheClient.dispose();
-                  },
-                  icon: const Icon(Icons.snooze))
+                      if (anyWereChanged) {
+                        setState(() {
+                          _itemListResponse = getItemListResponse(
+                              widget.itemManager, widget.client, widget.colUid);
+                        });
+                      }
+                      await cacheClient.dispose();
+                    },
+                    icon: const Icon(Icons.snooze))
             ]
           : null,
     );
@@ -852,7 +896,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       EtebaseItemManager itemManager,
       Map<String, dynamic> itemMap,
       EtebaseClient client) async {
-    return await Navigator.push<Map<String, dynamic>?>(
+    refreshTimer?.cancel();
+    final comingBack = await Navigator.push<Map<String, dynamic>?>(
         context,
         MaterialPageRoute(
             builder: (context) => EtebaseItemRoute(
@@ -861,6 +906,13 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                 itemManager: itemManager,
                 itemMap: itemMap,
                 client: client)));
+    refreshTimer = Timer.periodic(timerRefreshDuration, (timer) {
+      setState(() {
+        _itemListResponse = getItemListResponse(
+            widget.itemManager, widget.client, widget.colUid);
+      });
+    });
+    return comingBack;
   }
 
   List<Widget> todoItemList(
@@ -893,8 +945,14 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       final timeCompare = (aDue ?? DateTime.fromMillisecondsSinceEpoch(0))
           .compareTo(bDue ?? DateTime.fromMillisecondsSinceEpoch(0));
 
-      if ((aDue ?? DateTime.fromMillisecondsSinceEpoch(0)).day ==
-          (bDue ?? DateTime.fromMillisecondsSinceEpoch(0)).day) {
+      var compareToDay = (aDue ?? DateTime.fromMillisecondsSinceEpoch(0))
+          .day
+          .compareTo((bDue ?? DateTime.fromMillisecondsSinceEpoch(0)).day);
+      if (compareToDay == 0) {
+        if (priorityIntCompare != 0) {
+          return priorityIntCompare;
+        }
+      } else if (compareToDay > 0) {
         if (priorityIntCompare != 0) {
           return priorityIntCompare;
         }
@@ -978,12 +1036,19 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       final child = ListTile(
         leading: Text(
           dateForLogicDue != null
-              ? DateFormat(DateFormat.HOUR24_MINUTE).format(dateForLogicDue)
+              ? (DateFormat(DateFormat.HOUR24_MINUTE).format(dateForLogicDue) +
+                  (DateUtils.isSameDay(dateForLogicDue,
+                          today.subtract(const Duration(days: 1)))
+                      ? " ${AppLocalizations.of(context)!.yesterday}"
+                      : (DateUtils.isSameDay(dateForLogicDue,
+                              today.add(const Duration(days: 1)))
+                          ? AppLocalizations.of(context)!.tomorrow
+                          : "")))
               : "",
           style: TextStyle(
               color: dateForLogicDue != null &&
                       DateTime.now().compareTo(dateForLogicDue) > 0
-                  ? Colors.orange
+                  ? const ColorScheme.light().error
                   : null),
         ),
         title: Column(
@@ -1009,41 +1074,49 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
             children: <Widget>[
               Row(
                 children: [
-                  dateForLogicStart != null
+                  dateForLogicStart != null &&
+                          (dateForLogicStart.isAfter(today) ||
+                              (dateForLogicStart.day < today.day))
                       ? Chip(
                           label: RichText(
                               text: TextSpan(children: [
                           TextSpan(
-                              text: (DateUtils.isSameDay(
-                                      dateForLogicStart, today)
+                              text: ((DateUtils.isSameDay(
+                                          dateForLogicStart, today) ||
+                                      DateUtils.isSameDay(
+                                          dateForLogicStart,
+                                          today.subtract(
+                                              const Duration(days: 1))))
                                   ? (DateFormat.Hm()).format(dateForLogicStart)
-                                  : DateFormat.yMd().format(dateForLogicStart)),
+                                  : DateFormat("yyyy-MM-dd")
+                                      .format(dateForLogicStart)),
                               style: const TextStyle(color: Colors.black87)),
                           const WidgetSpan(
                               child: Icon(
-                                Icons.start,
+                                Icons.content_paste_go,
                                 color: Colors.black87,
                               ),
                               alignment: PlaceholderAlignment.middle)
                         ])))
                       : Container(),
-                  Chip(
-                      label: RichText(
-                          text: TextSpan(children: [
-                    TextSpan(
-                        text: dateForLogicDue != null
-                            ? (DateUtils.isSameDay(dateForLogicDue, today)
-                                ? (DateFormat.Hm()).format(dateForLogicDue)
-                                : DateFormat.yMd().format(dateForLogicDue))
-                            : null,
-                        style: const TextStyle(color: Colors.black87)),
-                    const WidgetSpan(
-                        child: Icon(
-                          Icons.stop_circle,
-                          color: Colors.black87,
-                        ),
-                        alignment: PlaceholderAlignment.middle)
-                  ]))),
+                  if (false)
+                    Chip(
+                        label: RichText(
+                            text: TextSpan(children: [
+                      TextSpan(
+                          text: dateForLogicDue != null
+                              ? (DateUtils.isSameDay(dateForLogicDue, today)
+                                  ? (DateFormat.Hm()).format(dateForLogicDue)
+                                  : DateFormat.yMd().format(dateForLogicDue))
+                              : null,
+                          style: const TextStyle(color: Colors.black87)),
+                      const WidgetSpan(
+                          child: Icon(
+                            Icons.punch_clock,
+                            color: Colors.black87,
+                          ),
+                          alignment: PlaceholderAlignment.middle)
+                    ]))),
                 ],
               ),
               const VerticalDivider(),

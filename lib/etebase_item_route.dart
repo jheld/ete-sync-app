@@ -488,8 +488,8 @@ class _EtebaseItemCreateRouteState extends State<EtebaseItemCreateRoute> {
                                 todoComp.due != null &&
                                 todoComp.start!
                                     .isAtSameMomentAs(todoComp.due!)) {
-                              todoComp.due = todoComp.due!
-                                  .add(const Duration(milliseconds: 1));
+                              todoComp.due =
+                                  todoComp.due!.add(const Duration(seconds: 1));
                             }
 
                             if (categories.length !=
@@ -1000,7 +1000,7 @@ class _EtebaseItemRouteState extends State<EtebaseItemRoute> {
                               format: DateFormat("yyyy-MM-dd HH:mm"),
                               decoration: const InputDecoration(
                                   labelText: "Start date",
-                                  icon: Icon(Icons.start)),
+                                  icon: Icon(Icons.content_paste_go)),
                               initialValue: todoComp.start,
                               controller: startController,
                               onShowPicker: (context, currentValue) async {
@@ -1028,20 +1028,29 @@ class _EtebaseItemRouteState extends State<EtebaseItemRoute> {
                                     if (startDateTimeOption ==
                                         StartDateTimeOptions.hideUntilDue) {
                                       currentValue = DateTimeField.combine(
-                                          todoComp.due ?? DateTime.now(),
+                                          (DateTime.tryParse(
+                                                      dueController.text) ??
+                                                  todoComp.due) ??
+                                              DateTime.now(),
                                           const TimeOfDay(hour: 0, minute: 0));
                                     } else if (startDateTimeOption ==
                                         StartDateTimeOptions.hideUntilDueTime) {
-                                      currentValue = todoComp.due;
+                                      currentValue = (DateTime.tryParse(
+                                              dueController.text) ??
+                                          todoComp.due);
                                     } else if (startDateTimeOption ==
                                         StartDateTimeOptions
                                             .hideUntilDayBefore) {
-                                      currentValue = todoComp.due!
+                                      currentValue = (DateTime.tryParse(
+                                                  dueController.text) ??
+                                              todoComp.due!)
                                           .subtract(const Duration(days: 1));
                                     } else if (startDateTimeOption ==
                                         StartDateTimeOptions
                                             .hideUntilWeekBefore) {
-                                      currentValue = todoComp.due!
+                                      currentValue = (DateTime.tryParse(
+                                                  dueController.text) ??
+                                              todoComp.due!)
                                           .subtract(const Duration(days: 7));
                                     } else {
                                       if (context.mounted) {
@@ -1093,7 +1102,7 @@ class _EtebaseItemRouteState extends State<EtebaseItemRoute> {
                               format: DateFormat("yyyy-MM-dd HH:mm"),
                               decoration: const InputDecoration(
                                   labelText: "Due date",
-                                  icon: Icon(Icons.stop_circle)),
+                                  icon: Icon(Icons.punch_clock)),
                               initialValue: todoComp.due,
                               controller: dueController,
                               onShowPicker: (context, currentValue) async {
@@ -1324,7 +1333,7 @@ class _EtebaseItemRouteState extends State<EtebaseItemRoute> {
                 todoComp.start != null &&
                 todoComp.due != null &&
                 todoComp.start!.isAtSameMomentAs(todoComp.due!)) {
-              todoComp.due = todoComp.due!.add(const Duration(milliseconds: 1));
+              todoComp.due = todoComp.due!.add(const Duration(seconds: 1));
             }
 
             if (categories.length != (todoComp.categories ?? []).length) {
