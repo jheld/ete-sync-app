@@ -179,19 +179,23 @@ class ItemListItem {
   final String itemUid;
   final Uint8List itemContent;
   final String? itemType;
+  final String? itemName;
 
   ItemListItem(
       {required this.itemIsDeleted,
       required this.itemUid,
       required this.itemContent,
-      required this.itemType});
+      required this.itemType,
+      required this.itemName});
 
   static ItemListItem fromMap(Map<String, dynamic> theMap) {
     return ItemListItem(
-        itemIsDeleted: theMap["itemIsDeleted"],
-        itemUid: theMap["itemUid"],
-        itemContent: theMap["itemContent"],
-        itemType: theMap["itemType"]);
+      itemIsDeleted: theMap["itemIsDeleted"],
+      itemUid: theMap["itemUid"],
+      itemContent: theMap["itemContent"],
+      itemType: theMap["itemType"],
+      itemName: theMap["itemName"],
+    );
   }
 
   Map<String, dynamic> toMap() {
@@ -199,7 +203,8 @@ class ItemListItem {
       "itemIsDeleted": itemIsDeleted,
       "itemContent": itemContent,
       "itemUid": itemUid,
-      "itemType": itemType
+      "itemType": itemType,
+      "itemName": itemName,
     };
     return theMap;
   }
@@ -280,6 +285,7 @@ Future<ItemListResponse> getItemListResponse(
       "itemUid": await item.getUid(),
       "itemContent": await item.getContent(),
       "itemType": (await item.getMeta()).itemType,
+      "itemName": (await item.getMeta()).name,
     };
   }
   //final itemsToPutInCache = [];
@@ -322,6 +328,7 @@ Future<ItemListResponse> getItemListResponse(
         "itemUid": await item.getUid(),
         "itemContent": await item.getContent(),
         "itemType": (await item.getMeta()).itemType,
+        "itemName": (await item.getMeta()).name,
       };
     }
   }
@@ -334,10 +341,12 @@ Future<ItemListResponse> getItemListResponse(
       .map((key, value) => MapEntry(
           key,
           ItemListItem(
-              itemType: value["itemType"],
-              itemContent: value["itemContent"],
-              itemUid: value["itemUid"],
-              itemIsDeleted: value["itemIsDeleted"])));
+            itemType: value["itemType"],
+            itemContent: value["itemContent"],
+            itemUid: value["itemUid"],
+            itemIsDeleted: value["itemIsDeleted"],
+            itemName: value["itemName"],
+          )));
 
   return ItemListResponse(
     items: theMap["items"],

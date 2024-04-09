@@ -10,6 +10,7 @@ import 'package:ete_sync_app/util.dart';
 import 'package:etebase_flutter/etebase_flutter.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -467,7 +468,26 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       } else {
         final listColumn = <Widget>[];
         for (final item in itemMap.entries) {
-          listColumn.add(Text(utf8.decode(item.value.itemContent)));
+          if (item.value.itemIsDeleted) {
+            continue;
+          }
+          listColumn.add(SizedBox(
+              //width: 300,
+              height: 100,
+              child: Container(
+                  decoration:
+                      const BoxDecoration(border: Border(bottom: BorderSide())),
+                  child: ListTile(
+                    title: (item.value.itemName != null &&
+                            !utf8
+                                .decode(item.value.itemContent)
+                                .contains(item.value.itemName!))
+                        ? Text(item.value.itemName!)
+                        : null,
+                    subtitle:
+                        Markdown(data: utf8.decode(item.value.itemContent)),
+                  ))));
+          //listColumn.add(Text(utf8.decode(item.value.itemContent)));
         }
 
         children.add(Column(children: listColumn));
