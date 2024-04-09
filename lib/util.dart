@@ -110,7 +110,7 @@ Future<List> getItemManager() async {
     client = await getEtebaseClient();
   } on EtebaseException catch (e) {
     if (e.code == EtebaseErrorCode.urlParse) {
-      return [null, null, null, null, serverUri, null];
+      return [null, null, null, null, serverUri, null, null];
     }
     rethrow;
   }
@@ -126,14 +126,14 @@ Future<List> getItemManager() async {
   final cacheDir = await myReceivePort.first;
 
   if (!Directory(cacheDir).existsSync()) {
-    return [client, null, null, null, serverUri, null];
+    return [client, null, null, null, serverUri, null, null];
   }
 
   late final String username;
   try {
     username = await getUsernameInCacheDir();
   } catch (error) {
-    return [client, null, null, null, serverUri, null];
+    return [client, null, null, null, serverUri, null, null];
   }
   const secureStorage = FlutterSecureStorage();
 
@@ -149,7 +149,7 @@ Future<List> getItemManager() async {
     etebase =
         await cacheClient.loadAccount(client, eteCacheAccountEncryptionKey);
   } catch (error) {
-    return [client, null, null, null, serverUri, cacheClient];
+    return [client, null, null, null, serverUri, cacheClient, null];
   }
   final collUid = await getCollectionUIDInCacheDir();
 
@@ -169,10 +169,65 @@ Future<List> getItemManager() async {
     (await collection.getMeta()).name,
     serverUri,
     cacheClient,
+    await collection.getCollectionType(),
   ];
 }
 
-Future<Map<String, dynamic>> getItemListResponse(
+class ItemListItem {
+  final bool itemIsDeleted;
+
+  final String itemUid;
+  final Uint8List itemContent;
+  final String? itemType;
+
+  ItemListItem(
+      {required this.itemIsDeleted,
+      required this.itemUid,
+      required this.itemContent,
+      required this.itemType});
+
+  static ItemListItem fromMap(Map<String, dynamic> theMap) {
+    return ItemListItem(
+        itemIsDeleted: theMap["itemIsDeleted"],
+        itemUid: theMap["itemUid"],
+        itemContent: theMap["itemContent"],
+        itemType: theMap["itemType"]);
+  }
+
+  Map<String, dynamic> toMap() {
+    final Map<String, dynamic> theMap = {
+      "itemIsDeleted": itemIsDeleted,
+      "itemContent": itemContent,
+      "itemUid": itemUid,
+      "itemType": itemType
+    };
+    return theMap;
+  }
+}
+
+class ItemListResponse {
+  final EtebaseItemManager itemManager;
+  final String username;
+  final String cacheDir;
+  final Map<EtebaseItem, ItemListItem> items;
+
+  ItemListResponse(
+      {required this.itemManager,
+      required this.username,
+      required this.cacheDir,
+      required this.items});
+
+  Map<String, dynamic> toMap() {
+    final theMap = <String, dynamic>{};
+    theMap["itemManager"] = itemManager;
+    theMap["username"] = username;
+    theMap["cacheDir"] = cacheDir;
+    theMap["items"] = items.map((key, value) => MapEntry(key, value.toMap()));
+    return theMap;
+  }
+}
+
+Future<ItemListResponse> getItemListResponse(
     EtebaseItemManager itemManager, EtebaseClient client, String colUid) async {
   bool done = false;
   String? stoken;
@@ -223,7 +278,8 @@ Future<Map<String, dynamic>> getItemListResponse(
     theMap["items"][item] = {
       "itemIsDeleted": await item.isDeleted(),
       "itemUid": await item.getUid(),
-      "itemContent": await item.getContent()
+      "itemContent": await item.getContent(),
+      "itemType": (await item.getMeta()).itemType,
     };
   }
   //final itemsToPutInCache = [];
@@ -264,7 +320,8 @@ Future<Map<String, dynamic>> getItemListResponse(
       theMap["items"][item] = {
         "itemIsDeleted": await item.isDeleted(),
         "itemUid": await item.getUid(),
-        "itemContent": await item.getContent()
+        "itemContent": await item.getContent(),
+        "itemType": (await item.getMeta()).itemType,
       };
     }
   }
@@ -273,7 +330,21 @@ Future<Map<String, dynamic>> getItemListResponse(
     await cacheClient.collectionSaveStoken(colUid, stoken);
   }
 
-  return theMap;
+  theMap["items"] = (theMap["items"] as Map<EtebaseItem, Map<String, dynamic>>)
+      .map((key, value) => MapEntry(
+          key,
+          ItemListItem(
+              itemType: value["itemType"],
+              itemContent: value["itemContent"],
+              itemUid: value["itemUid"],
+              itemIsDeleted: value["itemIsDeleted"])));
+
+  return ItemListResponse(
+    items: theMap["items"],
+    cacheDir: theMap["cacheDir"],
+    username: theMap["username"],
+    itemManager: theMap["itemManager"],
+  );
 }
 
 Future<Map<String, dynamic>> getCacheConfigInfo(EtebaseClient client) async {
@@ -287,7 +358,8 @@ Future<Map<String, dynamic>> getCacheConfigInfo(EtebaseClient client) async {
 }
 
 Future<Map<String, dynamic>> getCollections(EtebaseClient client,
-    {EtebaseAccount? etebaseAccount}) async {
+    {EtebaseAccount? etebaseAccount,
+    String collectionType = "etebase.vtodo"}) async {
   final username = await getUsernameInCacheDir();
   final cacheDir = await getCacheDir();
   final cacheClient =
@@ -312,6 +384,7 @@ Future<Map<String, dynamic>> getCollections(EtebaseClient client,
   theMap["items"] = <EtebaseCollection, Map<String, dynamic>>{};
   theMap["username"] = username;
   theMap["cacheDir"] = cacheDir;
+  theMap["collectionManager"] = collManager;
 
   bool done = false;
 
@@ -320,18 +393,24 @@ Future<Map<String, dynamic>> getCollections(EtebaseClient client,
 
   for (var cachedItemUID in itemsAtCollPath.map((e) => e.path)) {
     final item = await cacheClient.collectionGet(collManager, cachedItemUID);
+
+    if (await item.getCollectionType() != collectionType) {
+      continue;
+    }
     theMap["items"][item] = {
       "itemIsDeleted": await item.isDeleted(),
       "itemUid": await item.getUid(),
       "itemContent": await item.getContent(),
       "itemName": (await item.getMeta()).name,
       "itemColor": (await item.getMeta()).color,
+      "itemType": (await item.getMeta()).itemType,
+      "itemCollectionType": (await item.getCollectionType()),
     };
   }
 
   while (!done) {
     EtebaseCollectionListResponse rawItemList = await collManager.list(
-        "etebase.vtodo",
+        collectionType,
         EtebaseFetchOptions(
             stoken: theMap["items"].isNotEmpty ? stoken : null, limit: 50));
     List<EtebaseCollection> itemList = await rawItemList.getData();
@@ -339,8 +418,6 @@ Future<Map<String, dynamic>> getCollections(EtebaseClient client,
     done = await rawItemList.isDone();
 
     for (final item in itemList) {
-      await cacheClient.collectionSet(collManager, item);
-
       final itemUid = await item.getUid();
       for (final elementKeyInMap
           in (theMap["items"] as Map<EtebaseCollection, Map<String, dynamic>>)
@@ -350,12 +427,16 @@ Future<Map<String, dynamic>> getCollections(EtebaseClient client,
           break;
         }
       }
+
+      await cacheClient.collectionSet(collManager, item);
       theMap["items"][item] = {
         "itemIsDeleted": await item.isDeleted(),
         "itemUid": await item.getUid(),
         "itemContent": await item.getContent(),
         "itemName": (await item.getMeta()).name,
         "itemColor": (await item.getMeta()).color,
+        "itemType": (await item.getMeta()).itemType,
+        "itemCollectionType": (await item.getCollectionType()),
       };
     }
   }

@@ -140,13 +140,17 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
 
         await cacheClient.saveAccount(etebase, eteCacheAccountEncryptionValue);
 
+        final notesCollectionData = await getCollections(client,
+            etebaseAccount: etebase, collectionType: "etebase.md.note");
+
         final collectionMap =
             await getCollections(client, etebaseAccount: etebase);
 
+        (collectionMap["items"] as Map).addAll(notesCollectionData["items"]);
         if (collectionMap["items"].isEmpty) {
           await etebase.logout();
         } else if (context.mounted) {
-          final collectionUid = await showDialog(
+          final collectionData = await showDialog(
               context: context,
               barrierDismissible: false,
               builder: (BuildContext context) {
@@ -162,7 +166,8 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
                 );
               });
 
-          final collUid = collectionUid;
+          final collUid = collectionData["itemUid"];
+          final colType = collectionData["itemCollectionType"] as String;
           final collectionManager = await etebase.getCollectionManager();
           final collection = await collectionManager.fetch(collUid);
           await cacheClient.collectionSet(collectionManager, collection);
@@ -175,10 +180,12 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
                 context,
                 MaterialPageRoute(
                     builder: (BuildContext context) => MyHomePage(
-                        title: homePageTitle ?? "My Tasks",
-                        itemManager: itemManager,
-                        client: widget.client,
-                        colUid: collUid)));
+                          title: homePageTitle ?? "My Tasks",
+                          itemManager: itemManager,
+                          client: widget.client,
+                          colUid: collUid,
+                          colType: colType,
+                        )));
           }
         }
       }
@@ -191,7 +198,8 @@ ListTile buildCollectionListTile(Map<String, dynamic> element, String cacheDir,
   return ListTile(
     title: Text(element["itemName"]),
     leading: Icon(Icons.square,
-        color: element["itemColor"] != null
+        color: element["itemColor"] != null &&
+                (element["itemColor"] as String).isNotEmpty
             ? Color.fromRGBO(
                 int.parse((element["itemColor"] as String).substring(1, 3),
                     radix: 16),
@@ -207,7 +215,7 @@ ListTile buildCollectionListTile(Map<String, dynamic> element, String cacheDir,
       final activeCollectionFile =
           File("$cacheDir/$username/.activeCollection");
       activeCollectionFile.writeAsStringSync(element["itemUid"]);
-      Navigator.maybePop(context, element["itemUid"]);
+      Navigator.maybePop(context, element);
     },
   );
 }
@@ -219,6 +227,7 @@ class MyHomePage extends StatefulWidget {
     required this.itemManager,
     required this.client,
     required this.colUid,
+    required this.colType,
   });
 
   // This widget is the home page of your application. It is stateful, meaning
@@ -234,13 +243,14 @@ class MyHomePage extends StatefulWidget {
   final EtebaseItemManager itemManager;
   final EtebaseClient client;
   final String colUid;
+  final String colType;
 
   @override
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
 class _MyHomePageState extends State<MyHomePage> with WindowListener {
-  Future<Map<String, dynamic>>? _itemListResponse;
+  Future<ItemListResponse>? _itemListResponse;
   String? _searchText;
   DateTime? dateSearchStart;
   DateTime? dateSearchEnd;
@@ -300,7 +310,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       // _dateSearchStartController.text =
       //     DateFormat("yyyy-MM-dd").format(dateSearchStart!);
       today = DateTime.now();
-      collections = getCollections(widget.client);
+      collections = fetchCollections();
+
       accountInfo = getCacheConfigInfo(widget.client);
     });
     refreshTimer = Timer.periodic(timerRefreshDuration, (timer) {
@@ -311,13 +322,34 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     });
   }
 
+  Future<Map<String, dynamic>> fetchCollections(
+      {List<String> collectionTypes = const [
+        "etebase.vtodo",
+        "etebase.md.note"
+      ]}) async {
+    final Map<String, dynamic> collections = {};
+    for (var collectionType in collectionTypes) {
+      for (var collection in (await getCollections(widget.client,
+              collectionType: collectionType))
+          .entries) {
+        if (collection.key == "items" &&
+            collections.containsKey(collection.key)) {
+          (collections[collection.key] as Map).addAll(collection.value);
+        } else {
+          collections[collection.key] = collection.value;
+        }
+      }
+    }
+    return collections;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<LocaleModel>(builder: (context, localeModel, child) {
-      return FutureBuilder<Map<String, dynamic>>(
+      return FutureBuilder<ItemListResponse>(
           future: _itemListResponse,
           builder: (BuildContext context,
-              AsyncSnapshot<Map<String, dynamic>?> snapshot) {
+              AsyncSnapshot<ItemListResponse?> snapshot) {
             List<Widget> children = [];
             return Scaffold(
               drawer:
@@ -344,16 +376,17 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                                         itemManager: widget.itemManager,
                                         client: widget.client))).then((value) {
                           if (value != null) {
-                            (itemListResponse["items"]!
-                                    as Map<EtebaseItem, Map<String, dynamic>>)[
-                                value["item"] as EtebaseItem] = {
+                            itemListResponse
+                                    .items[value["item"] as EtebaseItem] =
+                                ItemListItem.fromMap({
                               "itemContent": value["itemContent"],
                               "itemUid": value["itemUid"],
-                              "itemIsDeleted": value["itemIsDeleted"]
-                            };
+                              "itemIsDeleted": value["itemIsDeleted"],
+                              "itemType": value["itemType"],
+                            });
                             setState(() {
                               _itemListResponse =
-                                  Future<Map<String, dynamic>>.value(
+                                  Future<ItemListResponse>.value(
                                       itemListResponse);
                             });
                           }
@@ -424,12 +457,21 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
   }
 
   Widget buildMainContent(BuildContext context,
-      AsyncSnapshot<Map<String, dynamic>?> snapshot, List<Widget> children) {
+      AsyncSnapshot<ItemListResponse?> snapshot, List<Widget> children) {
     if (snapshot.hasData && snapshot.data != null) {
-      final itemManager = snapshot.data!["itemManager"];
-      final itemMap =
-          (snapshot.data!)["items"] as Map<EtebaseItem, Map<String, dynamic>>;
-      children.addAll(todoItemList(itemManager, itemMap, snapshot.data!));
+      final itemListResponse = snapshot.data!;
+      final itemManager = itemListResponse.itemManager;
+      final itemMap = itemListResponse.items;
+      if (widget.colType == "etebase.vtodo") {
+        children.addAll(todoItemList(itemManager, itemMap, itemListResponse));
+      } else {
+        final listColumn = <Widget>[];
+        for (final item in itemMap.entries) {
+          listColumn.add(Text(utf8.decode(item.value.itemContent)));
+        }
+
+        children.add(Column(children: listColumn));
+      }
     } else {
       children.add(const Row(
           mainAxisSize: MainAxisSize.min,
@@ -498,8 +540,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     ]);
   }
 
-  AppBar buildAppBar(
-      BuildContext context, Map<String, dynamic> itemListResponse) {
+  AppBar buildAppBar(BuildContext context, ItemListResponse itemListResponse) {
     return AppBar(
       backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       title: Text(widget.title),
@@ -542,18 +583,18 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
 
                               _selectedTasks.remove(entry.key);
 
-                              (itemListResponse["items"]! as Map)
-                                  .remove(eteItem);
-                              (itemListResponse["items"]! as Map<EtebaseItem,
-                                      Map<String, dynamic>>)[
-                                  value["item"] as EtebaseItem] = {
+                              itemListResponse.items.remove(eteItem);
+                              itemListResponse
+                                      .items[value["item"] as EtebaseItem] =
+                                  ItemListItem.fromMap({
                                 "itemContent": value["itemContent"],
                                 "itemUid": value["itemUid"],
-                                "itemIsDeleted": value["itemIsDeleted"]
-                              };
+                                "itemIsDeleted": value["itemIsDeleted"],
+                                "itemType": value["itemType"],
+                              });
                               setState(() {
                                 _itemListResponse =
-                                    Future<Map<String, dynamic>>.value(
+                                    Future<ItemListResponse>.value(
                                         itemListResponse);
                               });
                               return value;
@@ -617,19 +658,21 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                                   itemManager, colUid, itemUpdatedFromServer);
                               await cacheClient.dispose();
 
-                              (itemListResponse["items"]! as Map)
-                                  .remove(eteItem);
+                              itemListResponse.items.remove(eteItem);
 
-                              (itemListResponse["items"]!
-                                  as Map)[itemUpdatedFromServer] = {
+                              itemListResponse.items[itemUpdatedFromServer] =
+                                  ItemListItem.fromMap({
                                 "itemContent": contentFromServer,
                                 "itemUid": await itemUpdatedFromServer.getUid(),
                                 "itemIsDeleted":
                                     await itemUpdatedFromServer.isDeleted(),
-                              };
+                                "itemType":
+                                    (await itemUpdatedFromServer.getMeta())
+                                        .itemType,
+                              });
                               setState(() {
                                 _itemListResponse =
-                                    Future<Map<String, dynamic>>.value(
+                                    Future<ItemListResponse>.value(
                                         itemListResponse);
                               });
                             }
@@ -784,23 +827,88 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                 builder: (BuildContext context,
                     AsyncSnapshot<Map<String, dynamic>?> snapshot) {
                   if (snapshot.hasData) {
-                    final items = snapshot.data!["items"]
+                    final collectionsResponse = snapshot.data!;
+                    final items = collectionsResponse["items"]
                         as Map<EtebaseCollection, Map<String, dynamic>>;
-                    final collItems = (items.values
-                        .where((element) => !element["itemIsDeleted"])
-                        .map((element) => buildCollectionListTile(
-                            element, cacheDir, username, context))
+                    final collItems = (items.entries
+                        .where((element) => !element.value["itemIsDeleted"])
+                        .map((element) => buildDrawerCollectionListTile(
+                            element,
+                            context,
+                            cacheDir,
+                            username,
+                            collectionsResponse["collectionManager"]
+                                as EtebaseCollectionManager))
                         .toList());
                     return Column(children: collItems);
                   } else {
-                    return const Column(children: [
-                      Text("Loading collection UIDs"),
-                      CircularProgressIndicator()
+                    return Column(children: [
+                      const Text("Loading collection UIDs"),
+                      if (snapshot.hasError) Text(snapshot.error.toString()),
+                      const CircularProgressIndicator()
                     ]);
                   }
                 });
           }),
     ]));
+  }
+
+  ListTile buildDrawerCollectionListTile(
+      MapEntry<EtebaseCollection, Map<String, dynamic>> element,
+      BuildContext context,
+      cacheDir,
+      username,
+      EtebaseCollectionManager collectionManager) {
+    final itemDataMap = element.value;
+
+    final String itemUid = itemDataMap["itemUid"];
+    final itemColor = itemDataMap["itemColor"] as String?;
+    final itemName = (itemDataMap["itemName"] as String?);
+    return ListTile(
+      selected: itemUid == widget.colUid,
+      title: Text(itemName ?? "<N/A> My Tasks"),
+      leading: Icon(Icons.square,
+          color: itemColor != null && itemColor.isNotEmpty
+              ? buildCollectionColor(itemColor)
+              : Colors.green),
+      trailing: Tooltip(message: itemUid, child: const Icon(Icons.info)),
+      onTap: () async {
+        if (itemUid == widget.colUid) {
+          Navigator.maybePop(context);
+          return;
+        }
+        final activeCollectionFile =
+            File("$cacheDir/$username/.activeCollection");
+        await activeCollectionFile.writeAsString(itemUid);
+        //Navigator.maybePop(context, element);
+
+        final colType = itemDataMap["itemCollectionType"];
+        final colUid = itemUid;
+        final itemManager =
+            (await collectionManager.getItemManager(element.key));
+        final newEteClient = await getEtebaseClient();
+        if (context.mounted) {
+          Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(
+                  builder: (BuildContext context) => MyHomePage(
+                        title: itemName ?? "My Tasks",
+                        itemManager: itemManager,
+                        client: newEteClient,
+                        colUid: colUid,
+                        colType: colType,
+                      )));
+        }
+      },
+    );
+  }
+
+  Color buildCollectionColor(String itemColorString) {
+    return Color.fromRGBO(
+        int.parse(itemColorString.substring(1, 3), radix: 16),
+        int.parse(itemColorString.substring(3, 5), radix: 16),
+        int.parse(itemColorString.substring(5, 7), radix: 16),
+        1.0);
   }
 
   /// Returns widgets for date selection
@@ -915,10 +1023,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     return comingBack;
   }
 
-  List<Widget> todoItemList(
-      EtebaseItemManager itemManager,
-      Map<EtebaseItem, Map<String, dynamic>> itemMap,
-      Map<String, dynamic> fullSnapshot) {
+  List<Widget> todoItemList(EtebaseItemManager itemManager,
+      Map<EtebaseItem, ItemListItem> itemMap, ItemListResponse fullSnapshot) {
     final client = widget.client;
     List<Widget> children = [];
     final itemsSorted = <ItemMapWrapper>[];
@@ -1042,7 +1148,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                       ? " ${AppLocalizations.of(context)!.yesterday}"
                       : (DateUtils.isSameDay(dateForLogicDue,
                               today.add(const Duration(days: 1)))
-                          ? AppLocalizations.of(context)!.tomorrow
+                          ? " ${AppLocalizations.of(context)!.tomorrow}"
                           : "")))
               : "",
           style: TextStyle(
@@ -1107,7 +1213,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                           text: dateForLogicDue != null
                               ? (DateUtils.isSameDay(dateForLogicDue, today)
                                   ? (DateFormat.Hm()).format(dateForLogicDue)
-                                  : DateFormat.yMd().format(dateForLogicDue))
+                                  : DateFormat("yyyy-MM-dd")
+                                      .format(dateForLogicDue))
                               : null,
                           style: const TextStyle(color: Colors.black87)),
                       const WidgetSpan(
@@ -1155,15 +1262,16 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                       await cacheClient.itemSet(
                           itemManager, colUid, value["item"]);
                       await cacheClient.dispose();
-                      (fullSnapshot["items"]! as Map).remove(eteItem);
-                      (fullSnapshot["items"]! as Map)[value["item"]] = {
+                      fullSnapshot.items.remove(eteItem);
+                      fullSnapshot.items[value["item"]] = ItemListItem.fromMap({
                         "itemContent": value["itemContent"],
                         "itemUid": value["itemUid"],
-                        "itemIsDeleted": value["itemIsDeleted"]
-                      };
+                        "itemIsDeleted": value["itemIsDeleted"],
+                        "itemType": value["itemType"],
+                      });
                       setState(() {
                         _itemListResponse =
-                            Future<Map<String, dynamic>>.value(fullSnapshot);
+                            Future<ItemListResponse>.value(fullSnapshot);
                       });
                       return value;
                     });
@@ -1212,18 +1320,20 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                             itemManager, colUid, itemUpdatedFromServer);
                         await cacheClient.dispose();
 
-                        (fullSnapshot["items"]! as Map).remove(eteItem);
+                        fullSnapshot.items.remove(eteItem);
 
-                        (fullSnapshot["items"]! as Map)[itemUpdatedFromServer] =
-                            {
+                        fullSnapshot.items[itemUpdatedFromServer] =
+                            ItemListItem.fromMap({
                           "itemContent": contentFromServer,
                           "itemUid": await itemUpdatedFromServer.getUid(),
                           "itemIsDeleted":
                               await itemUpdatedFromServer.isDeleted(),
-                        };
+                          "itemType":
+                              (await itemUpdatedFromServer.getMeta()).itemType,
+                        });
                         setState(() {
                           _itemListResponse =
-                              Future<Map<String, dynamic>>.value(fullSnapshot);
+                              Future<ItemListResponse>.value(fullSnapshot);
                         });
                       }
                     }
@@ -1247,16 +1357,16 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                 context, eteItem, icalendar!, itemManager, item.value, client)
             .then((value) {
           if (value != null) {
-            (fullSnapshot["items"]! as Map).remove(eteItem);
+            fullSnapshot.items.remove(eteItem);
 
-            (fullSnapshot["items"]! as Map)[value["item"]] = {
+            fullSnapshot.items[value["item"]] = ItemListItem.fromMap({
               "itemContent": value["itemContent"],
               "itemUid": value["itemUid"],
-              "itemIsDeleted": value["itemIsDeleted"]
-            };
+              "itemIsDeleted": value["itemIsDeleted"],
+              "itemType": value["itemType"],
+            });
             setState(() {
-              _itemListResponse =
-                  Future<Map<String, dynamic>>.value(fullSnapshot);
+              _itemListResponse = Future<ItemListResponse>.value(fullSnapshot);
             });
             //_refreshIndicatorKey.currentState?.show();
           } else {
@@ -1272,20 +1382,19 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
   }
 
   void filterItems(
-      Map<EtebaseItem, Map<String, dynamic>> itemMap,
+      Map<EtebaseItem, ItemListItem> itemMap,
       List<ItemMapWrapper> itemsSorted,
       Map<String, ItemMapWrapper> itemsByUID) {
     for (final entry in itemMap.entries) {
       final key = entry.key;
       final value = entry.value;
       late final VCalendar icalendar;
-      if (value["itemIsDeleted"]) {
+      if (value.itemIsDeleted) {
         continue;
       }
 
       try {
-        icalendar = VComponent.parse(
-            utf8.decode(value["itemContent"] as Uint8List),
+        icalendar = VComponent.parse(utf8.decode(value.itemContent),
             customParser: iCalendarCustomParser) as VCalendar;
       } catch (e) {
         continue;
@@ -1306,8 +1415,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
         continue;
       }
 
-      itemsSorted
-          .add(ItemMapWrapper(item: key, value: value, icalendar: icalendar));
+      itemsSorted.add(ItemMapWrapper(
+          item: key, value: value.toMap(), icalendar: icalendar));
       itemsByUID[icalendar.todo!.uid] = itemsSorted.last;
     }
   }
@@ -1453,6 +1562,15 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     }
 
     if (updatedDueDate != todoComp.due) {
+      if (todoComp.start != null &&
+          todoComp.due != null &&
+          todoComp.due!.isAtSameMomentAs(
+              todoComp.start!.add(const Duration(seconds: 1)))) {
+        todoComp.start = updatedDueDate;
+
+        updatedDueDate = updatedDueDate?.add(const Duration(seconds: 1));
+      }
+
       todoComp.due = updatedDueDate;
       sequenceChange = true;
     }

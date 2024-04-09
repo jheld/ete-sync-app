@@ -487,7 +487,7 @@ class _EtebaseItemCreateRouteState extends State<EtebaseItemCreateRoute> {
                                 todoComp.start != null &&
                                 todoComp.due != null &&
                                 todoComp.start!
-                                    .isAtSameMomentAs(todoComp.due!)) {
+                                    .isAtSameMomentAs(todoComp.due!.subtract(const Duration(seconds: 1)))) {
                               todoComp.due =
                                   todoComp.due!.add(const Duration(seconds: 1));
                             }
@@ -1332,7 +1332,7 @@ class _EtebaseItemRouteState extends State<EtebaseItemRoute> {
             if (updatedStart != null &&
                 todoComp.start != null &&
                 todoComp.due != null &&
-                todoComp.start!.isAtSameMomentAs(todoComp.due!)) {
+                todoComp.start!.isAtSameMomentAs(todoComp.due!.subtract(const Duration(seconds: 1)))) {
               todoComp.due = todoComp.due!.add(const Duration(seconds: 1));
             }
 

@@ -79,10 +79,13 @@ class _MyAppState extends State<MyApp> {
                     client: snapshot.data![0],
                     itemManager: snapshot.data![1],
                     colUid: snapshot.data![2],
+                    colType: snapshot.data![6],
                   );
                 }
               } else {
-                return const InitialLoadingWidget();
+                return InitialLoadingWidget(
+                    error:
+                        snapshot.hasError ? snapshot.error.toString() : null);
               }
             }),
         debugShowCheckedModeBanner: false,
@@ -94,23 +97,27 @@ class _MyAppState extends State<MyApp> {
 class InitialLoadingWidget extends StatelessWidget {
   const InitialLoadingWidget({
     super.key,
+    this.error,
   });
+
+  final String? error;
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
         appBar: AppBar(title: const Text('EteSync Task')),
-        body: const Center(
+        body: Center(
           child: Column(children: [
             Row(
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Padding(
+                const Padding(
                   padding: EdgeInsets.only(right: 24.0),
                   child: Text("Checking for local config data..."),
                 ),
-                CircularProgressIndicator(),
+                if (error != null) Text(error!),
+                const CircularProgressIndicator(),
               ],
             )
           ]),

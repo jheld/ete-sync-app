@@ -10,7 +10,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:ete_sync_app/main.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 void main() {
