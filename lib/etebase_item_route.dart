@@ -12,24 +12,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:flutter_input_chips/flutter_input_chips.dart';
+
 import 'package:intl/intl.dart';
 import 'package:pretty_diff_text/pretty_diff_text.dart';
 import 'package:rrule_generator/rrule_generator.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
-
-class EtebaseItemCreateRoute extends StatefulWidget {
-  const EtebaseItemCreateRoute({
-    super.key,
-    required this.itemManager,
-    required this.client,
-  });
-
-  final EtebaseItemManager itemManager;
-  final EtebaseClient client;
-
-  @override
-  State<StatefulWidget> createState() => _EtebaseItemCreateRouteState();
-}
 
 enum StartDateTimeOptions {
   /* hide until array index -> significance  */
@@ -61,6 +48,22 @@ extension ExtensionTodoStatus on StartDateTimeOptions {
         return 'Specific Day and Time';
     }
   }
+}
+
+
+
+class EtebaseItemCreateRoute extends StatefulWidget {
+  const EtebaseItemCreateRoute({
+    super.key,
+    required this.itemManager,
+    required this.client,
+  });
+
+  final EtebaseItemManager itemManager;
+  final EtebaseClient client;
+
+  @override
+  State<StatefulWidget> createState() => _EtebaseItemCreateRouteState();
 }
 
 class _EtebaseItemCreateRouteState extends State<EtebaseItemCreateRoute> {
@@ -95,12 +98,12 @@ class _EtebaseItemCreateRouteState extends State<EtebaseItemCreateRoute> {
 
   @override
   void dispose() {
-    super.dispose();
     summaryController.dispose();
     startController.dispose();
     dueController.dispose();
     recurrenceRuleController.dispose();
     descriptionController.dispose();
+    super.dispose();
   }
 
   String localizedStartDateTimeOption(
@@ -152,7 +155,8 @@ class _EtebaseItemCreateRouteState extends State<EtebaseItemCreateRoute> {
                         }
                         return null;
                       },
-                      decoration: const InputDecoration(labelText: "Summary"),
+                      decoration: InputDecoration(
+                          labelText: AppLocalizations.of(context)!.summary),
                       onChanged: (val) {},
                     ),
                     DropdownButtonFormField(
@@ -169,7 +173,8 @@ class _EtebaseItemCreateRouteState extends State<EtebaseItemCreateRoute> {
                           });
                         }
                       },
-                      decoration: const InputDecoration(labelText: "Priority"),
+                      decoration: InputDecoration(
+                          labelText: AppLocalizations.of(context)!.priority),
                       value: _priority,
                     ),
                     DropdownButtonFormField(
@@ -486,8 +491,8 @@ class _EtebaseItemCreateRouteState extends State<EtebaseItemCreateRoute> {
                             if (updatedStart != null &&
                                 todoComp.start != null &&
                                 todoComp.due != null &&
-                                todoComp.start!
-                                    .isAtSameMomentAs(todoComp.due!.subtract(const Duration(seconds: 1)))) {
+                                todoComp.start!.isAtSameMomentAs(todoComp.due!
+                                    .subtract(const Duration(seconds: 1)))) {
                               todoComp.due =
                                   todoComp.due!.add(const Duration(seconds: 1));
                             }
@@ -566,7 +571,7 @@ class _EtebaseItemCreateRouteState extends State<EtebaseItemCreateRoute> {
                             }
                           }
                         },
-                        child: const Text("save")),
+                        child: Text(AppLocalizations.of(context)!.save)),
                     const Divider(height: 50),
                     IconButton(
                         onPressed: () async {
@@ -944,8 +949,9 @@ class _EtebaseItemRouteState extends State<EtebaseItemRoute> {
                               }
                               return null;
                             },
-                            decoration:
-                                const InputDecoration(labelText: "Summary"),
+                            decoration: InputDecoration(
+                                labelText:
+                                    AppLocalizations.of(context)!.summary),
                             onChanged: (val) {},
                           )),
                       DropdownButtonFormField(
@@ -962,8 +968,8 @@ class _EtebaseItemRouteState extends State<EtebaseItemRoute> {
                             });
                           }
                         },
-                        decoration:
-                            const InputDecoration(labelText: "Priority"),
+                        decoration: InputDecoration(
+                            labelText: AppLocalizations.of(context)!.priority),
                         value: _priority,
                       ),
                       DropdownButtonFormField(
@@ -1332,7 +1338,8 @@ class _EtebaseItemRouteState extends State<EtebaseItemRoute> {
             if (updatedStart != null &&
                 todoComp.start != null &&
                 todoComp.due != null &&
-                todoComp.start!.isAtSameMomentAs(todoComp.due!.subtract(const Duration(seconds: 1)))) {
+                todoComp.start!.isAtSameMomentAs(
+                    todoComp.due!.subtract(const Duration(seconds: 1)))) {
               todoComp.due = todoComp.due!.add(const Duration(seconds: 1));
             }
 

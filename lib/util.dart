@@ -131,7 +131,14 @@ Future<List> getItemManager() async {
 
   late final String username;
   try {
-    username = await getUsernameInCacheDir();
+    final Future<SharedPreferences> prefsInstance =
+        SharedPreferences.getInstance();
+    final SharedPreferences prefs = await prefsInstance;
+    String? usernameInPref = prefs.getString("username");
+    if (usernameInPref == null) {
+      throw Exception("No username in preferences.");
+    }
+    username = usernameInPref;
   } catch (error) {
     return [client, null, null, null, serverUri, null, null];
   }
@@ -180,13 +187,15 @@ class ItemListItem {
   final Uint8List itemContent;
   final String? itemType;
   final String? itemName;
+  final DateTime? mtime;
 
   ItemListItem(
       {required this.itemIsDeleted,
       required this.itemUid,
       required this.itemContent,
       required this.itemType,
-      required this.itemName});
+      required this.itemName,
+      required this.mtime});
 
   static ItemListItem fromMap(Map<String, dynamic> theMap) {
     return ItemListItem(
@@ -195,6 +204,7 @@ class ItemListItem {
       itemContent: theMap["itemContent"],
       itemType: theMap["itemType"],
       itemName: theMap["itemName"],
+      mtime: theMap["mtime"],
     );
   }
 
@@ -205,6 +215,7 @@ class ItemListItem {
       "itemUid": itemUid,
       "itemType": itemType,
       "itemName": itemName,
+      "mtime": mtime,
     };
     return theMap;
   }
@@ -233,7 +244,8 @@ class ItemListResponse {
 }
 
 Future<ItemListResponse> getItemListResponse(
-    EtebaseItemManager itemManager, EtebaseClient client, String colUid) async {
+    EtebaseItemManager itemManager, EtebaseClient client, String colUid,
+    {bool cacheOnly = false}) async {
   bool done = false;
   String? stoken;
   Map<String, dynamic> theMap = {};
@@ -286,10 +298,11 @@ Future<ItemListResponse> getItemListResponse(
       "itemContent": await item.getContent(),
       "itemType": (await item.getMeta()).itemType,
       "itemName": (await item.getMeta()).name,
+      "mtime": (await item.getMeta()).mtime,
     };
   }
   //final itemsToPutInCache = [];
-  while (!done) {
+  while (!done && !cacheOnly) {
     late final EtebaseItemListResponse rawItemList;
     bool loopAgainSpecial = false;
     try {
@@ -329,6 +342,7 @@ Future<ItemListResponse> getItemListResponse(
         "itemContent": await item.getContent(),
         "itemType": (await item.getMeta()).itemType,
         "itemName": (await item.getMeta()).name,
+        "mtime": (await item.getMeta()).mtime,
       };
     }
   }
@@ -346,6 +360,7 @@ Future<ItemListResponse> getItemListResponse(
             itemUid: value["itemUid"],
             itemIsDeleted: value["itemIsDeleted"],
             itemName: value["itemName"],
+            mtime: value["mtime"],
           )));
 
   return ItemListResponse(

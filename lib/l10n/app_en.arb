@@ -11,5 +11,15 @@
     "hideUntilNone": "No start date",
     "tomorrow": "tomorrow",
     "yesterday": "Yesterday",
+    "content": "Content",
+    "title": "Title",
+    "save": "Save",
+    "clear": "Clear",
+    "summary": "Summary",
+    "createNewTask": "Create new task",
+    "createNewNote": "Create new note",
+    "search": "Search",
+    "filters": "Filters",
+    "priority": "Priority",
     "language": "Language"
 }

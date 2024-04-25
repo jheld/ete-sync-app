@@ -8,5 +8,15 @@
     "hideUntilNone": "אין תאריך התחלה",
     "yesterday": "אתמול",
     "tomorrow": "מחר",
+    "content": "תוכן",
+    "title": "תואר",
+    "save": "שמור",
+    "summary": "תקציר",
+    "search": "חיפוש",
+    "clear": "נקה",
+    "createNewTask": "יצירת משימה חדשה",
+    "createNewNote": "יצירת פתק חדש",
+    "filters": "סינונים",
+    "priority": "עדיפות",
     "language": "שפה"
 }
