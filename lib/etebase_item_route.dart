@@ -50,7 +50,14 @@ extension ExtensionTodoStatus on StartDateTimeOptions {
   }
 }
 
-
+MaterialColor priorityColor(Priority priority) {
+  return switch (priority) {
+    Priority.undefined => Colors.grey,
+    Priority.low => Colors.blue,
+    Priority.medium => Colors.orange,
+    Priority.high => Colors.red,
+  };
+}
 
 class EtebaseItemCreateRoute extends StatefulWidget {
   const EtebaseItemCreateRoute({
@@ -133,6 +140,11 @@ class _EtebaseItemCreateRouteState extends State<EtebaseItemCreateRoute> {
           leading: BackButton(onPressed: () {
             Navigator.maybePop(context, null);
           }),
+          actions: [
+            buildIconSaveButton(context),
+            const Divider(height: 50),
+            buildIconDiscardButton(context),
+          ],
           // TRY THIS: Try changing the color here to a specific color (to
           // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
           // change color while the other colors stay the same.
@@ -163,7 +175,13 @@ class _EtebaseItemCreateRouteState extends State<EtebaseItemCreateRoute> {
                       items: Priority.values
                           .map((e) => DropdownMenuItem(
                                 value: e,
-                                child: Text(e.name),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.circle,
+                                        size: 16, color: priorityColor(e)),
+                                    Text(e.name),
+                                  ],
+                                ),
                               ))
                           .toList(),
                       onChanged: (value) {
@@ -328,7 +346,14 @@ class _EtebaseItemCreateRouteState extends State<EtebaseItemCreateRoute> {
                     ),
                     TextFormField(
                       controller: recurrenceRuleController,
-                      decoration: const InputDecoration(labelText: "RRULE"),
+                      decoration: InputDecoration(
+                        labelText: "RRULE",
+                        suffixIcon: IconButton(
+                          onPressed: recurrenceRuleController.clear,
+                          icon: const Icon(Icons.clear),
+                          tooltip: AppLocalizations.of(context)!.clear,
+                        ),
+                      ),
                       onTap: () {
                         final valueToUseIfCancel =
                             recurrenceRuleController.text;
@@ -399,212 +424,192 @@ class _EtebaseItemCreateRouteState extends State<EtebaseItemCreateRoute> {
                             );
                           }),
                     ]),
-                    TextButton(
-                        onPressed: () async {
-                          if (_formKey.currentState!.validate()) {
-                            final icalendar = VCalendar();
-                            final todoComp = VTodo(parent: icalendar);
-                            icalendar.children.add(todoComp);
-
-                            bool sequenceChange = false;
-                            /*
-                            
-                            sequence must change if:
-                            o  "DTSTART"
-                            
-                            o  "DTEND"
-                            
-                            o  "DURATION"
-                            
-                            o  "DUE"
-                            
-                            o  "RRULE"
-                            
-                            o  "RDATE"
-                            
-                            o  "EXDATE"
-                            
-                            o  "STATUS"
-                            */
-                            bool statusChanged = false;
-                            if (_status != todoComp.status) {
-                              todoComp.status = _status;
-                              sequenceChange = true;
-                              statusChanged = true;
-                            }
-                            if (_priority != todoComp.priority) {
-                              todoComp.priority = _priority;
-                            }
-                            if (todoComp.summary != summaryController.text) {
-                              todoComp.summary = summaryController.text;
-                            }
-                            if (todoComp.description !=
-                                descriptionController.text) {
-                              todoComp.description = descriptionController.text;
-                            }
-
-                            todoComp.lastModified = DateTime.now();
-                            final updatedRecurrenceRule =
-                                recurrenceRuleController.text.isNotEmpty
-                                    ? Recurrence.parse(
-                                        recurrenceRuleController.text)
-                                    : null;
-                            if (todoComp.recurrenceRule !=
-                                updatedRecurrenceRule) {
-                              todoComp.recurrenceRule = updatedRecurrenceRule;
-                              sequenceChange = true;
-                              //if (statusChanged) {
-                              //  todoComp.recurrenceId = todoComp.start;
-                              //}
-                            }
-                            //if (todoComp.recurrenceRule != null && statusChanged) {
-                            //todoComp.recurrenceId = todoComp.start;
-                            // }
-                            final updatedStart =
-                                DateTime.tryParse(startController.text);
-                            final updatedDue =
-                                DateTime.tryParse(dueController.text);
-
-                            if ((updatedDue != null && todoComp.due == null) ||
-                                (updatedDue == null && todoComp.due != null)) {
-                              todoComp.due = updatedDue;
-                              sequenceChange = true;
-                            } else if (todoComp.due != null &&
-                                updatedDue != null &&
-                                todoComp.due!.compareTo(updatedDue) != 0) {
-                              todoComp.due = updatedDue;
-                              sequenceChange = true;
-                            }
-                            if ((updatedStart != null &&
-                                    todoComp.start == null) ||
-                                (updatedStart == null &&
-                                    todoComp.start != null)) {
-                              todoComp.start = updatedStart;
-                              sequenceChange = true;
-                            } else if (todoComp.start != null &&
-                                updatedStart != null &&
-                                todoComp.start!.compareTo(updatedStart) != 0) {
-                              todoComp.start = updatedStart;
-                              sequenceChange = true;
-                            }
-
-                            if (updatedStart != null &&
-                                todoComp.start != null &&
-                                todoComp.due != null &&
-                                todoComp.start!.isAtSameMomentAs(todoComp.due!
-                                    .subtract(const Duration(seconds: 1)))) {
-                              todoComp.due =
-                                  todoComp.due!.add(const Duration(seconds: 1));
-                            }
-
-                            if (categories.length !=
-                                (todoComp.categories ?? []).length) {
-                              todoComp.categories =
-                                  categories.isNotEmpty ? categories : null;
-                            } else if (categories
-                                .toSet()
-                                .difference((todoComp.categories ?? []).toSet())
-                                .isNotEmpty) {
-                              todoComp.categories =
-                                  categories.isNotEmpty ? categories : null;
-                            }
-
-                            if (sequenceChange) {
-                              todoComp.sequence = (todoComp.sequence ?? 0) + 1;
-                            }
-                            todoComp.uid = VCalendar.createUid();
-                            todoComp.timeStamp = DateTime.now();
-                            final nextTodo = (statusChanged &&
-                                    (todoComp.status == TodoStatus.completed ||
-                                        todoComp.status ==
-                                            TodoStatus.cancelled))
-                                ? getNextOccurrence(
-                                    todoComp, todoComp.recurrenceRule)
-                                : todoComp;
-
-                            final actualNextTodo = nextTodo ?? todoComp;
-
-                            actualNextTodo.checkValidity();
-                            final item = await widget.itemManager.create(
-                                EtebaseItemMetadata(mtime: DateTime.now()),
-                                utf8.encode(todoComp.parent!.toString()));
-
-                            if (kDebugMode) {
-                              print("--------BEGIN Intended changes---------");
-                              print(actualNextTodo.parent!.toString());
-                              print("--------END Intended changes-----------");
-                            }
-
-                            await widget.itemManager.transaction([item]);
-
-                            final itemUpdatedFromServer = await widget
-                                .itemManager
-                                .fetch((await item.getUid()));
-
-                            final username = await getUsernameInCacheDir();
-
-                            final cacheClient =
-                                await EtebaseFileSystemCache.create(
-                                    widget.client,
-                                    await getCacheDir(),
-                                    username);
-                            final colUid = await getCollectionUIDInCacheDir();
-                            await cacheClient.itemSet(widget.itemManager,
-                                colUid, itemUpdatedFromServer);
-                            await cacheClient.dispose();
-
-                            final updatedItemContent =
-                                await itemUpdatedFromServer.getContent();
-                            final updateVCalendar = VComponent.parse(
-                                utf8.decode(updatedItemContent)) as VCalendar;
-                            final sendingToNavigator = {
-                              "item": itemUpdatedFromServer,
-                              "icalendar": itemUpdatedFromServer,
-                              "itemContent": updatedItemContent,
-                              "itemIsDeleted":
-                                  await itemUpdatedFromServer.isDeleted(),
-                              "itemUid": await itemUpdatedFromServer.getUid(),
-                              "todo": updateVCalendar.todo!,
-                            };
-                            if (context.mounted) {
-                              Navigator.maybePop(context, sendingToNavigator);
-                            }
-                          }
-                        },
-                        child: Text(AppLocalizations.of(context)!.save)),
-                    const Divider(height: 50),
-                    IconButton(
-                        onPressed: () async {
-                          final action = await showDialog(
-                              context: context,
-                              builder: (BuildContext context) {
-                                return AlertDialog(
-                                  title: const Text('Discard creating todo'),
-                                  content: const Text(
-                                      'Would you like to discard creating this todo?'),
-                                  actions: <Widget>[
-                                    TextButton(
-                                      onPressed: () =>
-                                          Navigator.pop(context, 'Continue'),
-                                      child: const Text('Continue'),
-                                    ),
-                                    TextButton(
-                                      onPressed: () =>
-                                          Navigator.pop(context, 'OK'),
-                                      child: const Text('OK'),
-                                    ),
-                                  ],
-                                );
-                              });
-                          if (action == "OK") {
-                            if (context.mounted) Navigator.of(context).pop();
-                          }
-                        },
-                        icon: const Icon(Icons.cancel)),
                   ])),
             ],
           ),
         ));
+  }
+
+  IconButton buildIconDiscardButton(BuildContext context) {
+    return IconButton(
+        onPressed: () async {
+          final action = await showDialog(
+              context: context,
+              builder: (BuildContext context) {
+                return AlertDialog(
+                  title: const Text('Discard creating todo'),
+                  content: const Text(
+                      'Would you like to discard creating this todo?'),
+                  actions: <Widget>[
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, 'Continue'),
+                      child: const Text('Continue'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, 'OK'),
+                      child: const Text('OK'),
+                    ),
+                  ],
+                );
+              });
+          if (action == "OK") {
+            if (context.mounted) Navigator.of(context).pop();
+          }
+        },
+        tooltip: AppLocalizations.of(context)!.cancel,
+        icon: const Icon(Icons.cancel));
+  }
+
+  IconButton buildIconSaveButton(BuildContext context) {
+    return IconButton(
+        onPressed: () async {
+          if (_formKey.currentState!.validate()) {
+            final icalendar = VCalendar();
+            final todoComp = VTodo(parent: icalendar);
+            icalendar.children.add(todoComp);
+
+            bool sequenceChange = false;
+            /*
+                          
+                          sequence must change if:
+                          o  "DTSTART"
+                          
+                          o  "DTEND"
+                          
+                          o  "DURATION"
+                          
+                          o  "DUE"
+                          
+                          o  "RRULE"
+                          
+                          o  "RDATE"
+                          
+                          o  "EXDATE"
+                          
+                          o  "STATUS"
+                          */
+            bool statusChanged = false;
+            if (_status != todoComp.status) {
+              todoComp.status = _status;
+              sequenceChange = true;
+              statusChanged = true;
+            }
+            if (_priority != todoComp.priority) {
+              todoComp.priority = _priority;
+            }
+            if (todoComp.summary != summaryController.text) {
+              todoComp.summary = summaryController.text;
+            }
+            if (todoComp.description != descriptionController.text) {
+              todoComp.description = descriptionController.text;
+            }
+
+            todoComp.lastModified = DateTime.now();
+            final updatedRecurrenceRule =
+                recurrenceRuleController.text.isNotEmpty
+                    ? Recurrence.parse(recurrenceRuleController.text)
+                    : null;
+            if (todoComp.recurrenceRule != updatedRecurrenceRule) {
+              todoComp.recurrenceRule = updatedRecurrenceRule;
+              sequenceChange = true;
+              //if (statusChanged) {
+              //  todoComp.recurrenceId = todoComp.start;
+              //}
+            }
+            //if (todoComp.recurrenceRule != null && statusChanged) {
+            //todoComp.recurrenceId = todoComp.start;
+            // }
+            final updatedStart = DateTime.tryParse(startController.text);
+            final updatedDue = DateTime.tryParse(dueController.text);
+
+            if ((updatedDue != null && todoComp.due == null) ||
+                (updatedDue == null && todoComp.due != null)) {
+              todoComp.due = updatedDue;
+              sequenceChange = true;
+            } else if (todoComp.due != null &&
+                updatedDue != null &&
+                todoComp.due!.compareTo(updatedDue) != 0) {
+              todoComp.due = updatedDue;
+              sequenceChange = true;
+            }
+            if ((updatedStart != null && todoComp.start == null) ||
+                (updatedStart == null && todoComp.start != null)) {
+              todoComp.start = updatedStart;
+              sequenceChange = true;
+            } else if (todoComp.start != null &&
+                updatedStart != null &&
+                todoComp.start!.compareTo(updatedStart) != 0) {
+              todoComp.start = updatedStart;
+              sequenceChange = true;
+            }
+
+            if (updatedStart != null &&
+                todoComp.start != null &&
+                todoComp.due != null &&
+                todoComp.start!.isAtSameMomentAs(
+                    todoComp.due!.subtract(const Duration(seconds: 1)))) {
+              todoComp.due = todoComp.due!.add(const Duration(seconds: 1));
+            }
+
+            if (categories.length != (todoComp.categories ?? []).length) {
+              todoComp.categories = categories.isNotEmpty ? categories : null;
+            } else if (categories
+                .toSet()
+                .difference((todoComp.categories ?? []).toSet())
+                .isNotEmpty) {
+              todoComp.categories = categories.isNotEmpty ? categories : null;
+            }
+
+            if (sequenceChange) {
+              todoComp.sequence = (todoComp.sequence ?? 0) + 1;
+            }
+            todoComp.uid = VCalendar.createUid();
+            todoComp.timeStamp = DateTime.now();
+            final nextTodo = (statusChanged &&
+                    (todoComp.status == TodoStatus.completed ||
+                        todoComp.status == TodoStatus.cancelled))
+                ? getNextOccurrence(todoComp, todoComp.recurrenceRule)
+                : todoComp;
+
+            final actualNextTodo = nextTodo ?? todoComp;
+
+            actualNextTodo.checkValidity();
+            final item = await widget.itemManager.create(
+                EtebaseItemMetadata(mtime: DateTime.now()),
+                utf8.encode(todoComp.parent!.toString()));
+
+            await widget.itemManager.transaction([item]);
+
+            final itemUpdatedFromServer =
+                await widget.itemManager.fetch((await item.getUid()));
+
+            final username = await getUsernameInCacheDir();
+
+            final cacheClient = await EtebaseFileSystemCache.create(
+                widget.client, await getCacheDir(), username);
+            final colUid = await getCollectionUIDInCacheDir();
+            await cacheClient.itemSet(
+                widget.itemManager, colUid, itemUpdatedFromServer);
+            await cacheClient.dispose();
+
+            final updatedItemContent = await itemUpdatedFromServer.getContent();
+            final updateVCalendar =
+                VComponent.parse(utf8.decode(updatedItemContent)) as VCalendar;
+            final sendingToNavigator = {
+              "item": itemUpdatedFromServer,
+              "icalendar": itemUpdatedFromServer,
+              "itemContent": updatedItemContent,
+              "itemIsDeleted": await itemUpdatedFromServer.isDeleted(),
+              "itemUid": await itemUpdatedFromServer.getUid(),
+              "todo": updateVCalendar.todo!,
+            };
+            if (context.mounted) {
+              Navigator.maybePop(context, sendingToNavigator);
+            }
+          }
+        },
+        icon: const Icon(Icons.save),
+        tooltip: AppLocalizations.of(context)!.save);
   }
 }
 
@@ -651,10 +656,10 @@ class _EtebaseItemRouteState extends State<EtebaseItemRoute> {
     summaryController.text = todoComp.summary ?? "";
     descriptionController.text = todoComp.description ?? "";
     startController.text = todoComp.start != null
-        ? DateFormat("yyyy-MM-dd HH:mm").format(todoComp.start!)
+        ? DateFormat("yyyy-MM-dd HH:mm").format(todoComp.start!.toLocal())
         : "";
     dueController.text = todoComp.due != null
-        ? DateFormat("yyyy-MM-dd HH:mm").format(todoComp.due!)
+        ? DateFormat("yyyy-MM-dd HH:mm").format(todoComp.due!.toLocal())
         : "";
     recurrenceRuleController.text = todoComp.recurrenceRule?.toString() ?? "";
     _status = todoComp.status;
@@ -958,7 +963,14 @@ class _EtebaseItemRouteState extends State<EtebaseItemRoute> {
                         items: Priority.values
                             .map((e) => DropdownMenuItem(
                                   value: e,
-                                  child: Text(e.name),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.circle,
+                                          size: 16, color: priorityColor(e)),
+                                      Text(e.name),
+                                    ],
+                                  ),
                                 ))
                             .toList(),
                         onChanged: (value) {
@@ -1158,7 +1170,14 @@ class _EtebaseItemRouteState extends State<EtebaseItemRoute> {
                       ),
                       TextFormField(
                         controller: recurrenceRuleController,
-                        decoration: const InputDecoration(labelText: "RRULE"),
+                        decoration: InputDecoration(
+                          labelText: "RRULE",
+                          suffixIcon: IconButton(
+                            onPressed: recurrenceRuleController.clear,
+                            icon: const Icon(Icons.clear),
+                            tooltip: AppLocalizations.of(context)!.clear,
+                          ),
+                        ),
                         onTap: () {
                           final valueToUseIfCancel =
                               recurrenceRuleController.text;
@@ -1257,9 +1276,7 @@ class _EtebaseItemRouteState extends State<EtebaseItemRoute> {
         onPressed: () async {
           if (_formKey.currentState!.validate()) {
             //                                  final itemUid = await this.widget.item.getUid();
-            debugPrint("etag: ${await widget.item.getEtag()}");
             final itemClone = await widget.item.clone();
-            debugPrint("etag itemClone: ${await itemClone.getEtag()}");
             bool sequenceChange = false;
             /*
                             
@@ -1321,12 +1338,12 @@ class _EtebaseItemRouteState extends State<EtebaseItemRoute> {
             } else if (todoComp.due != null &&
                 updatedDue != null &&
                 todoComp.due!.compareTo(updatedDue) != 0) {
-              todoComp.due = updatedDue;
+              todoComp.due = updatedDue.toUtc();
               sequenceChange = true;
             }
             if ((updatedStart != null && todoComp.start == null) ||
                 (updatedStart == null && todoComp.start != null)) {
-              todoComp.start = updatedStart;
+              todoComp.start = updatedStart?.toUtc();
               sequenceChange = true;
             } else if (todoComp.start != null &&
                 updatedStart != null &&
@@ -1362,15 +1379,17 @@ class _EtebaseItemRouteState extends State<EtebaseItemRoute> {
                 : todoComp;
 
             final actualNextTodo = nextTodo ?? todoComp;
+
+            if (actualNextTodo != todoComp) {
+              if (actualNextTodo.getProperty("X-MOZ-SNOOZE-TIME") != null) {
+                actualNextTodo.removeProperty("X-MOZ-SNOOZE-TIME");
+              }
+            }
             actualNextTodo.checkValidity();
             final itemMetaClone = (await itemClone.getMeta()).copyWith(
                 mtime: nextTodo?.lastModified ?? todoComp.lastModified);
             await itemClone.setMeta(itemMetaClone);
-            if (kDebugMode) {
-              print("--------BEGIN Intended changes---------");
-              print(actualNextTodo.parent!.toString());
-              print("--------END Intended changes-----------");
-            }
+
             await itemClone
                 .setContent(utf8.encode(actualNextTodo.parent!.toString()));
             try {
@@ -1397,14 +1416,7 @@ class _EtebaseItemRouteState extends State<EtebaseItemRoute> {
                         final iCalendarFromServer =
                             VComponent.parse(utf8.decode(contentFromServer))
                                 as VCalendar;
-                        debugPrint("------ BEGIN server data ---------");
-                        debugPrint(iCalendarFromServer.toString());
-                        debugPrint("----- END server data -----------");
-                        if (kDebugMode) {
-                          print(actualNextTodo.parent!
-                              .toString()
-                              .compareTo(iCalendarFromServer.toString()));
-                        }
+
                         final todoFromServer = iCalendarFromServer.todo!;
                         await widget.item
                             .setMeta(await itemUpdatedFromServer.getMeta());

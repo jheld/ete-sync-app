@@ -15,6 +15,7 @@
     "title": "Title",
     "save": "Save",
     "clear": "Clear",
+    "cancel": "Cancel",
     "summary": "Summary",
     "createNewTask": "Create new task",
     "createNewNote": "Create new note",

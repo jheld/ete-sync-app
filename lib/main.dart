@@ -4,6 +4,7 @@ import 'package:ete_sync_app/my_home_page.dart';
 import 'package:ete_sync_app/util.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 
@@ -107,20 +108,42 @@ class InitialLoadingWidget extends StatelessWidget {
     return Scaffold(
         appBar: AppBar(title: const Text('EteSync Task')),
         body: Center(
-          child: Column(children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.start,
+            mainAxisSize: MainAxisSize.max,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (error == null)
                 const Padding(
                   padding: EdgeInsets.only(right: 24.0),
                   child: Text("Checking for local config data..."),
                 ),
-                if (error != null) Text(error!),
-                const CircularProgressIndicator(),
-              ],
-            )
-          ]),
+              if (error != null)
+                Text(
+                  error!,
+                  softWrap: true,
+                  maxLines: 3,
+                ),
+              if (error != null)
+                TextButton(
+                    onPressed: () {
+                      Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(
+                              builder: (BuildContext context) =>
+                                  const MyApp()));
+                    },
+                    child: const Text("Refresh")),
+              if (error != null)
+                TextButton(
+                    onPressed: () {
+                      SystemChannels.platform
+                          .invokeMethod('SystemNavigator.pop');
+                    },
+                    child: const Text("Quit")),
+              if (error == null) const CircularProgressIndicator(),
+            ],
+          ),
         ));
   }
 }

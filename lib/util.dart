@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:developer' as dev;
 import 'dart:isolate';
 
 import 'package:enough_icalendar/enough_icalendar.dart';
@@ -9,7 +8,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:intl/intl.dart';
-import 'package:logging/logging.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:rrule/rrule.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -243,6 +241,73 @@ class ItemListResponse {
   }
 }
 
+class CollectionListItem {
+  final bool itemIsDeleted;
+
+  final String itemUid;
+  final Uint8List itemContent;
+  final String? itemType;
+  final String? itemName;
+  final String itemCollectionType;
+  final String? itemColor;
+
+  CollectionListItem(
+      {required this.itemIsDeleted,
+      required this.itemUid,
+      required this.itemContent,
+      required this.itemType,
+      required this.itemName,
+      required this.itemCollectionType,
+      required this.itemColor});
+
+  static CollectionListItem fromMap(Map<String, dynamic> theMap) {
+    return CollectionListItem(
+      itemIsDeleted: theMap["itemIsDeleted"],
+      itemUid: theMap["itemUid"],
+      itemContent: theMap["itemContent"],
+      itemType: theMap["itemType"],
+      itemName: theMap["itemName"],
+      itemColor: theMap["itemColor"],
+      itemCollectionType: theMap["itemCollectionType"],
+    );
+  }
+
+  Map<String, dynamic> toMap() {
+    final Map<String, dynamic> theMap = {
+      "itemIsDeleted": itemIsDeleted,
+      "itemUid": itemUid,
+      "itemContent": itemContent,
+      "itemName": itemName,
+      "itemColor": itemColor,
+      "itemType": itemType,
+      "itemCollectionType": itemCollectionType,
+    };
+    return theMap;
+  }
+}
+
+class CollectionListResponse {
+  final EtebaseCollectionManager collectionManager;
+  final String username;
+  final String cacheDir;
+  final Map<EtebaseCollection, CollectionListItem> items;
+
+  CollectionListResponse(
+      {required this.collectionManager,
+      required this.username,
+      required this.cacheDir,
+      required this.items});
+
+  Map<String, dynamic> toMap() {
+    final theMap = <String, dynamic>{};
+    theMap["collectionManager"] = collectionManager;
+    theMap["username"] = username;
+    theMap["cacheDir"] = cacheDir;
+    theMap["items"] = items.map((key, value) => MapEntry(key, value.toMap()));
+    return theMap;
+  }
+}
+
 Future<ItemListResponse> getItemListResponse(
     EtebaseItemManager itemManager, EtebaseClient client, String colUid,
     {bool cacheOnly = false}) async {
@@ -283,12 +348,6 @@ Future<ItemListResponse> getItemListResponse(
   final itemsAtCollPath =
       Directory("$cacheDir/$username/cols/$collUid/items").listSync().toList();
 
-  dev.log(
-      "number of cached items in collection `$collUid`: ${itemsAtCollPath.length}",
-      name: "ete_sync_app",
-      time: DateTime.now(),
-      level: Level.CONFIG.value);
-
   theMap["items"] = <EtebaseItem, Map<String, dynamic>>{};
   for (var cachedItemUID in itemsAtCollPath.map((e) => e.path)) {
     final item = await cacheClient.itemGet(itemManager, collUid, cachedItemUID);
@@ -303,11 +362,37 @@ Future<ItemListResponse> getItemListResponse(
   }
   //final itemsToPutInCache = [];
   while (!done && !cacheOnly) {
-    late final EtebaseItemListResponse rawItemList;
     bool loopAgainSpecial = false;
     try {
-      rawItemList = await itemManager.list(EtebaseFetchOptions(
-          stoken: theMap["items"].isNotEmpty ? stoken : null, limit: 50));
+      final EtebaseItemListResponse rawItemList = await itemManager.list(
+          EtebaseFetchOptions(
+              stoken: theMap["items"].isNotEmpty ? stoken : null, limit: 50));
+
+      List<EtebaseItem> itemList = await (rawItemList).getData();
+      stoken = await rawItemList.getStoken();
+      done = await rawItemList.isDone();
+
+      for (final item in itemList) {
+        //itemsToPutInCache.add(item);
+        await cacheClient.itemSet(itemManager, colUid, item);
+        final itemUid = await item.getUid();
+        for (final elementKeyInMap
+            in (theMap["items"] as Map<EtebaseItem, Map<String, dynamic>>)
+                .keys) {
+          if ((await elementKeyInMap.getUid()) == itemUid) {
+            (theMap["items"] as Map).remove(elementKeyInMap);
+            break;
+          }
+        }
+        theMap["items"][item] = {
+          "itemIsDeleted": await item.isDeleted(),
+          "itemUid": await item.getUid(),
+          "itemContent": await item.getContent(),
+          "itemType": (await item.getMeta()).itemType,
+          "itemName": (await item.getMeta()).name,
+          "mtime": (await item.getMeta()).mtime,
+        };
+      }
     } on EtebaseException catch (e) {
       switch (e.code) {
         case EtebaseErrorCode.generic:
@@ -318,32 +403,9 @@ Future<ItemListResponse> getItemListResponse(
           rethrow;
       }
     }
+
     if (loopAgainSpecial) {
       continue;
-    }
-    List<EtebaseItem> itemList = await (rawItemList).getData();
-    stoken = await rawItemList.getStoken();
-    done = await rawItemList.isDone();
-
-    for (final item in itemList) {
-      //itemsToPutInCache.add(item);
-      await cacheClient.itemSet(itemManager, colUid, item);
-      final itemUid = await item.getUid();
-      for (final elementKeyInMap
-          in (theMap["items"] as Map<EtebaseItem, Map<String, dynamic>>).keys) {
-        if ((await elementKeyInMap.getUid()) == itemUid) {
-          (theMap["items"] as Map).remove(elementKeyInMap);
-          break;
-        }
-      }
-      theMap["items"][item] = {
-        "itemIsDeleted": await item.isDeleted(),
-        "itemUid": await item.getUid(),
-        "itemContent": await item.getContent(),
-        "itemType": (await item.getMeta()).itemType,
-        "itemName": (await item.getMeta()).name,
-        "mtime": (await item.getMeta()).mtime,
-      };
     }
   }
 
@@ -381,7 +443,7 @@ Future<Map<String, dynamic>> getCacheConfigInfo(EtebaseClient client) async {
   return theMap;
 }
 
-Future<Map<String, dynamic>> getCollections(EtebaseClient client,
+Future<CollectionListResponse> getCollections(EtebaseClient client,
     {EtebaseAccount? etebaseAccount,
     String collectionType = "etebase.vtodo"}) async {
   final username = await getUsernameInCacheDir();
@@ -468,7 +530,26 @@ Future<Map<String, dynamic>> getCollections(EtebaseClient client,
     await cacheClient.saveStoken(stoken);
   }
 
-  return theMap;
+  theMap["items"] =
+      (theMap["items"] as Map<EtebaseCollection, Map<String, dynamic>>)
+          .map((key, value) => MapEntry(
+              key,
+              CollectionListItem(
+                itemIsDeleted: value["itemIsDeleted"],
+                itemUid: value["itemUid"],
+                itemContent: value["itemContent"],
+                itemName: value["itemName"],
+                itemColor: value["itemColor"],
+                itemType: value["itemType"],
+                itemCollectionType: value["itemCollectionType"],
+              )));
+
+  return CollectionListResponse(
+    items: theMap["items"],
+    cacheDir: theMap["cacheDir"],
+    username: theMap["username"],
+    collectionManager: theMap["collectionManager"],
+  );
   //return (theMap["items"] as Map<EtebaseCollection, Map<String, dynamic>>)
   //    .keys
   //    .toList();
@@ -526,12 +607,13 @@ VTodo? getNextOccurrence(VTodo todoComp, Recurrence? recurrenceRule) {
 
         //nextTodo.uid = (const Uuid()).v4();
         if (nextStartDate != null) {
-          nextTodo.start =
-              nextStartDate.copyWith(isUtc: todoComp.start?.isUtc ?? false);
+          nextTodo.start = nextStartDate
+              .copyWith(isUtc: todoComp.start?.isUtc ?? false)
+              .toUtc();
         }
         if (nextDueDate != null) {
           nextTodo.due =
-              nextDueDate.copyWith(isUtc: todoComp.due?.isUtc ?? false);
+              nextDueDate.copyWith(isUtc: todoComp.due?.isUtc ?? false).toUtc();
         }
 
         if (todoComp.recurrenceRule?.count != null &&

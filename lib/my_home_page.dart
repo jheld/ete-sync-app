@@ -13,7 +13,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart' as intl;
 import 'package:provider/provider.dart';
 import 'package:rrule/rrule.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -157,8 +157,8 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
         final collectionMap =
             await getCollections(client, etebaseAccount: etebase);
 
-        (collectionMap["items"] as Map).addAll(notesCollectionData["items"]);
-        if (collectionMap["items"].isEmpty) {
+        (collectionMap.items as Map).addAll(notesCollectionData.items);
+        if (collectionMap.items.isEmpty) {
           await etebase.logout();
         } else if (context.mounted) {
           final collectionData = await showDialog(
@@ -167,8 +167,8 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
               builder: (BuildContext context) {
                 return Dialog(
                   child: Column(
-                      children: (collectionMap["items"]
-                              as Map<EtebaseCollection, Map<String, dynamic>>)
+                      children: (collectionMap.items.map(
+                              (key, value) => MapEntry(key, value.toMap())))
                           .values
                           .where((element) => !element["itemIsDeleted"])
                           .map((element) => buildCollectionListTile(
@@ -337,9 +337,9 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       dateSearchEnd = (dateSearchEnd ?? DateTime.now())
           .copyWith(hour: 23, minute: 59, second: 59);
       _dateSearchEndController.text =
-          DateFormat("yyyy-MM-dd").format(dateSearchEnd!);
+          intl.DateFormat("yyyy-MM-dd").format(dateSearchEnd!.toLocal());
       // _dateSearchStartController.text =
-      //     DateFormat("yyyy-MM-dd").format(dateSearchStart!);
+      //     intl.DateFormat("yyyy-MM-dd").format(dateSearchStart!.toLocal());
       today = DateTime.now();
       collections = fetchCollections();
 
@@ -363,6 +363,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     for (var collectionType in collectionTypes) {
       for (var collection in (await getCollections(widget.client,
               collectionType: collectionType))
+          .toMap()
           .entries) {
         if (collection.key == "items" &&
             collections.containsKey(collection.key)) {
@@ -415,14 +416,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                           if (value != null) {
                             itemListResponse
                                     .items[value["item"] as EtebaseItem] =
-                                ItemListItem.fromMap({
-                              "itemContent": value["itemContent"],
-                              "itemUid": value["itemUid"],
-                              "itemIsDeleted": value["itemIsDeleted"],
-                              "itemType": value["itemType"],
-                              "itemName": value["itemName"],
-                              "mtime": value["mtime"],
-                            });
+                                ItemListItem.fromMap(value);
                             setState(() {
                               _itemListResponse =
                                   Future<ItemListResponse>.value(
@@ -512,71 +506,23 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       final itemListResponse = snapshot.data!;
       final itemManager = itemListResponse.itemManager;
       final itemMap = itemListResponse.items;
-      if (widget.colType == "etebase.vtodo") {
-        children.addAll(todoItemList(itemManager, itemMap, itemListResponse));
-      } else {
-        final listColumn = <Widget>[];
-        final itemMapEntriesSorted = <MapEntry<EtebaseItem, ItemListItem>>[];
-        for (final item in itemMap.entries) {
-          if (item.value.itemIsDeleted) {
-            continue;
-          }
-          itemMapEntriesSorted.add(item);
-        }
-        itemMapEntriesSorted.sort((a, b) =>
-            (a.value.mtime ?? DateTime.fromMillisecondsSinceEpoch(0)).compareTo(
-                b.value.mtime ?? DateTime.fromMillisecondsSinceEpoch(0)));
-        for (final item in itemMapEntriesSorted) {
-          listColumn.add(SizedBox(
-              //width: 300,
-              height: 100,
-              child: Container(
-                  decoration:
-                      const BoxDecoration(border: Border(bottom: BorderSide())),
-                  child: ListTile(
-                    title: (item.value.itemName != null &&
-                            !utf8
-                                .decode(item.value.itemContent)
-                                .startsWith(item.value.itemName!))
-                        ? AutoDirection(
-                            text: item.value.itemName!,
-                            child: Text(item.value.itemName!))
-                        : null,
-                    subtitle: AutoDirection(
-                        text: utf8.decode(item.value.itemContent),
-                        child: Markdown(
-                            data: utf8.decode(item.value.itemContent))),
-                    onTap: () => onPressedItemNoteWidget(context, item.key,
-                            itemManager, item.value.toMap(), widget.client)
-                        .then((value) {
-                      if (value != null) {
-                        itemListResponse.items.remove(item.key);
 
-                        itemListResponse.items[value["item"]] =
-                            ItemListItem.fromMap({
-                          "itemContent": value["itemContent"],
-                          "itemUid": value["itemUid"],
-                          "itemIsDeleted": value["itemIsDeleted"],
-                          "itemType": value["itemType"],
-                          "itemName": value["itemName"],
-                          "mtime": value["mtime"],
-                        });
-                        setState(() {
-                          _itemListResponse =
-                              Future<ItemListResponse>.value(itemListResponse);
-                        });
-                        //_refreshIndicatorKey.currentState?.show();
-                      } else {
-                        /*setState(() {
-              _itemListResponse = getItemListResponse(itemManager);
-            });*/
-                      }
-                    }),
-                  ))));
-          //listColumn.add(Text(utf8.decode(item.value.itemContent)));
-        }
+      switch (widget.colType) {
+        case "etebase.vtodo":
+          children.addAll(todoItemList(itemManager, itemMap, itemListResponse));
+          break;
+        case "etebase.md.note":
+          List<Widget> listColumn =
+              noteItemList(itemMap, context, itemManager, itemListResponse);
 
-        children.add(Column(children: listColumn));
+          children.add(Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(children: listColumn),
+          ));
+        default:
+          final colTypeUnsupportedText =
+              Text("Unsupported Collection type ${widget.colType}.");
+          children.add(colTypeUnsupportedText);
       }
     } else {
       children.add(const Row(
@@ -609,6 +555,67 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
         ),
       ],
     );
+  }
+
+  List<Widget> noteItemList(
+      Map<EtebaseItem, ItemListItem> itemMap,
+      BuildContext context,
+      EtebaseItemManager itemManager,
+      ItemListResponse itemListResponse) {
+    final listColumn = <Widget>[];
+    final itemMapEntriesSorted = <MapEntry<EtebaseItem, ItemListItem>>[];
+    for (final item in itemMap.entries) {
+      if (item.value.itemIsDeleted) {
+        continue;
+      }
+      itemMapEntriesSorted.add(item);
+    }
+    itemMapEntriesSorted.sort((a, b) => (a.value.mtime ??
+            DateTime.fromMillisecondsSinceEpoch(0))
+        .compareTo(b.value.mtime ?? DateTime.fromMillisecondsSinceEpoch(0)));
+    for (final MapEntry(key: key, value: value) in itemMapEntriesSorted) {
+      final itemContentString = utf8.decode(value.itemContent);
+      final textDirection = intl.Bidi.detectRtlDirectionality(itemContentString)
+          ? TextDirection.rtl
+          : TextDirection.ltr;
+
+      listColumn.add(Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          decoration: const BoxDecoration(border: Border(bottom: BorderSide())),
+          child: ListTile(
+            title: (value.itemName != null &&
+                    !itemContentString.startsWith(value.itemName!))
+                ? AutoDirection(
+                    text: value.itemName!, child: Text(value.itemName!))
+                : null,
+            subtitle: SizedBox(
+                height: 50,
+                child: Directionality(
+                    textDirection: textDirection,
+                    child: Markdown(data: itemContentString))),
+            onTap: () => onPressedItemNoteWidget(
+                    context, key, itemManager, value.toMap(), widget.client)
+                .then((value) {
+              if (value != null) {
+                itemListResponse.items.remove(key);
+
+                itemListResponse.items[value["item"]] =
+                    ItemListItem.fromMap(value);
+                setState(() {
+                  _itemListResponse =
+                      Future<ItemListResponse>.value(itemListResponse);
+                });
+                //_refreshIndicatorKey.currentState?.show();
+              } else {
+                /*setState(() {
+      _itemListResponse = getItemListResponse(itemManager);
+              });*/
+              }
+            }),
+          )));
+      //listColumn.add(Text(utf8.decode(item.value.itemContent)));
+    }
+    return listColumn;
   }
 
   ExpansionTile buildExpansionTileTaskFinishedFilters(
@@ -652,159 +659,250 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     return AppBar(
       backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       title: Text(widget.title),
-      actions: true
-          ? [
-              if (_selectedTasks.isNotEmpty)
-                IconButton(
-                    onPressed: () async {
-                      bool anyWereChanged = false;
-                      final cacheClient = await EtebaseFileSystemCache.create(
-                          widget.client,
-                          await getCacheDir(),
-                          await getUsernameInCacheDir());
+      actions: [
+        if (_selectedTasks.isNotEmpty)
+          IconButton(
+              onPressed: () async {
+                bool anyWereChanged = false;
+                final cacheClient = await EtebaseFileSystemCache.create(
+                    widget.client,
+                    await getCacheDir(),
+                    await getUsernameInCacheDir());
 
-                      final colUid = await getCollectionUIDInCacheDir();
-                      for (var entry in _selectedTasks.entries.toList()) {
-                        final item = entry.value;
-                        final eteItem = item.item;
-                        final icalendar = item.icalendar;
-                        final itemManager = widget.itemManager;
-                        final compTodo = icalendar.todo!;
-                        if ([TodoStatus.completed, TodoStatus.cancelled]
-                            .contains(compTodo.status)) {
-                          return;
+                final colUid = await getCollectionUIDInCacheDir();
+                for (var entry in _selectedTasks.entries.toList()) {
+                  final item = entry.value;
+                  final eteItem = item.item;
+                  final icalendar = item.icalendar;
+                  final itemManager = widget.itemManager;
+                  final compTodo = icalendar.todo!;
+                  if ([TodoStatus.completed, TodoStatus.cancelled]
+                      .contains(compTodo.status)) {
+                    return;
+                  }
+                  try {
+                    if (context.mounted) {
+                      refreshTimer?.cancel();
+                      await onPressedModifyDueDate(eteItem, icalendar,
+                              itemManager, compTodo, context)
+                          .then((value) async {
+                        if (value == null) {
+                          return value;
+                        } else {
+                          anyWereChanged = true;
                         }
-                        try {
-                          if (context.mounted) {
-                            refreshTimer?.cancel();
-                            await onPressedModifyDueDate(eteItem, icalendar,
-                                    itemManager, compTodo, context)
-                                .then((value) async {
-                              if (value == null) {
-                                return value;
-                              } else {
-                                anyWereChanged = true;
-                              }
 
-                              await cacheClient.itemSet(
-                                  itemManager, colUid, value["item"]);
+                        await cacheClient.itemSet(
+                            itemManager, colUid, value["item"]);
 
-                              _selectedTasks.remove(entry.key);
+                        _selectedTasks.remove(entry.key);
 
-                              itemListResponse.items.remove(eteItem);
-                              itemListResponse
-                                      .items[value["item"] as EtebaseItem] =
-                                  ItemListItem.fromMap({
-                                "itemContent": value["itemContent"],
-                                "itemUid": value["itemUid"],
-                                "itemIsDeleted": value["itemIsDeleted"],
-                                "itemType": value["itemType"],
-                                "itemName": value["itemName"],
-                                "mtime": value["mtime"],
-                              });
-                              setState(() {
-                                _itemListResponse =
-                                    Future<ItemListResponse>.value(
-                                        itemListResponse);
-                              });
-                              return value;
-                            });
-                            refreshTimer =
-                                Timer.periodic(timerRefreshDuration, (timer) {
-                              setState(() {
-                                _itemListResponse = getItemListResponse(
-                                    widget.itemManager,
-                                    widget.client,
-                                    widget.colUid);
-                              });
-                            });
-                          }
-                        } on Exception catch (error, stackTrace) {
-                          if (kDebugMode) {
-                            print(stackTrace);
-                            print(error);
-                          }
-
-                          if (error is EtebaseException) {
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context)
-                                  .showSnackBar(SnackBar(
-                                content: Text(error.message),
-                                duration: const Duration(seconds: 5),
-                                action: SnackBarAction(
-                                  label: 'OK',
-                                  onPressed: () async {
-                                    ScaffoldMessenger.of(context)
-                                        .hideCurrentSnackBar();
-                                  },
-                                ),
-                              ));
-                            }
-                            if (error.code == EtebaseErrorCode.conflict) {
-                              final itemUpdatedFromServer = await itemManager
-                                  .fetch(await eteItem.getUid());
-                              final contentFromServer =
-                                  await itemUpdatedFromServer.getContent();
-                              if (kDebugMode) {
-                                print(
-                                    "------BEGIN returned from server ---------");
-                                print(
-                                    "ETAG: ${await itemUpdatedFromServer.getEtag()}");
-                                print((VComponent.parse(
-                                            utf8.decode(contentFromServer))
-                                        as VCalendar)
-                                    .toString());
-                                print(
-                                    "------END returned from server ---------");
-                              }
-
-                              final cacheClient =
-                                  await EtebaseFileSystemCache.create(
-                                      widget.client,
-                                      await getCacheDir(),
-                                      await getUsernameInCacheDir());
-                              final colUid = await getCollectionUIDInCacheDir();
-                              await cacheClient.itemSet(
-                                  itemManager, colUid, itemUpdatedFromServer);
-                              await cacheClient.dispose();
-
-                              itemListResponse.items.remove(eteItem);
-
-                              itemListResponse.items[itemUpdatedFromServer] =
-                                  ItemListItem.fromMap({
-                                "itemContent": contentFromServer,
-                                "itemUid": await itemUpdatedFromServer.getUid(),
-                                "itemIsDeleted":
-                                    await itemUpdatedFromServer.isDeleted(),
-                                "itemType":
-                                    (await itemUpdatedFromServer.getMeta())
-                                        .itemType,
-                                "itemName":
-                                    (await itemUpdatedFromServer.getMeta())
-                                        .name,
-                                "mtime": (await itemUpdatedFromServer.getMeta())
-                                    .mtime,
-                              });
-                              setState(() {
-                                _itemListResponse =
-                                    Future<ItemListResponse>.value(
-                                        itemListResponse);
-                              });
-                            }
-                          }
-                        }
-                      }
-                      if (anyWereChanged) {
+                        itemListResponse.items.remove(eteItem);
+                        itemListResponse.items[value["item"] as EtebaseItem] =
+                            ItemListItem.fromMap(value);
+                        setState(() {
+                          _itemListResponse =
+                              Future<ItemListResponse>.value(itemListResponse);
+                        });
+                        return value;
+                      });
+                      refreshTimer =
+                          Timer.periodic(timerRefreshDuration, (timer) {
                         setState(() {
                           _itemListResponse = getItemListResponse(
                               widget.itemManager, widget.client, widget.colUid);
                         });
+                      });
+                    }
+                  } on Exception catch (error, stackTrace) {
+                    if (kDebugMode) {
+                      print(stackTrace);
+                      print(error);
+                    }
+
+                    if (error is EtebaseException) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                          content: Text(error.message),
+                          duration: const Duration(seconds: 5),
+                          action: SnackBarAction(
+                            label: 'OK',
+                            onPressed: () async {
+                              ScaffoldMessenger.of(context)
+                                  .hideCurrentSnackBar();
+                            },
+                          ),
+                        ));
                       }
+                      if (error.code == EtebaseErrorCode.conflict) {
+                        final itemUpdatedFromServer =
+                            await itemManager.fetch(await eteItem.getUid());
+                        final contentFromServer =
+                            await itemUpdatedFromServer.getContent();
+
+                        final cacheClient = await EtebaseFileSystemCache.create(
+                            widget.client,
+                            await getCacheDir(),
+                            await getUsernameInCacheDir());
+                        final colUid = await getCollectionUIDInCacheDir();
+                        await cacheClient.itemSet(
+                            itemManager, colUid, itemUpdatedFromServer);
+                        await cacheClient.dispose();
+
+                        itemListResponse.items.remove(eteItem);
+
+                        itemListResponse.items[itemUpdatedFromServer] =
+                            ItemListItem.fromMap({
+                          "itemContent": contentFromServer,
+                          "itemUid": await itemUpdatedFromServer.getUid(),
+                          "itemIsDeleted":
+                              await itemUpdatedFromServer.isDeleted(),
+                          "itemType":
+                              (await itemUpdatedFromServer.getMeta()).itemType,
+                          "itemName":
+                              (await itemUpdatedFromServer.getMeta()).name,
+                          "mtime":
+                              (await itemUpdatedFromServer.getMeta()).mtime,
+                        });
+                        setState(() {
+                          _itemListResponse =
+                              Future<ItemListResponse>.value(itemListResponse);
+                        });
+                      }
+                    }
+                  }
+                }
+                if (anyWereChanged) {
+                  setState(() {
+                    _itemListResponse = getItemListResponse(
+                        widget.itemManager, widget.client, widget.colUid);
+                  });
+                }
+                await cacheClient.dispose();
+              },
+              icon: const Icon(Icons.watch_later_outlined)),
+        if (_selectedTasks.isNotEmpty)
+          IconButton(
+            onPressed: () async {
+              bool anyWereChanged = false;
+              final cacheClient = await EtebaseFileSystemCache.create(
+                  widget.client,
+                  await getCacheDir(),
+                  await getUsernameInCacheDir());
+
+              final colUid = await getCollectionUIDInCacheDir();
+              for (var entry in _selectedTasks.entries.toList()) {
+                final item = entry.value;
+                final eteItem = item.item;
+                final icalendar = item.icalendar;
+                final itemManager = widget.itemManager;
+                final compTodo = icalendar.todo!;
+                if ([TodoStatus.completed, TodoStatus.cancelled]
+                    .contains(compTodo.status)) {
+                  return;
+                }
+                try {
+                  if (context.mounted) {
+                    refreshTimer?.cancel();
+                    await onPressedModifySnooze(
+                            eteItem, icalendar, itemManager, compTodo, context)
+                        .then((value) async {
+                      if (value == null) {
+                        return value;
+                      } else {
+                        anyWereChanged = true;
+                      }
+
+                      await cacheClient.itemSet(
+                          itemManager, colUid, value["item"]);
+
+                      _selectedTasks.remove(entry.key);
+
+                      itemListResponse.items.remove(eteItem);
+                      itemListResponse.items[value["item"] as EtebaseItem] =
+                          ItemListItem.fromMap(value);
+                      setState(() {
+                        _itemListResponse =
+                            Future<ItemListResponse>.value(itemListResponse);
+                      });
+                      return value;
+                    });
+                    refreshTimer =
+                        Timer.periodic(timerRefreshDuration, (timer) {
+                      setState(() {
+                        _itemListResponse = getItemListResponse(
+                            widget.itemManager, widget.client, widget.colUid);
+                      });
+                    });
+                  }
+                } on Exception catch (error, stackTrace) {
+                  if (kDebugMode) {
+                    print(stackTrace);
+                    print(error);
+                  }
+
+                  if (error is EtebaseException) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(error.message),
+                        duration: const Duration(seconds: 5),
+                        action: SnackBarAction(
+                          label: 'OK',
+                          onPressed: () async {
+                            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                          },
+                        ),
+                      ));
+                    }
+                    if (error.code == EtebaseErrorCode.conflict) {
+                      final itemUpdatedFromServer =
+                          await itemManager.fetch(await eteItem.getUid());
+                      final contentFromServer =
+                          await itemUpdatedFromServer.getContent();
+
+                      final cacheClient = await EtebaseFileSystemCache.create(
+                          widget.client,
+                          await getCacheDir(),
+                          await getUsernameInCacheDir());
+                      final colUid = await getCollectionUIDInCacheDir();
+                      await cacheClient.itemSet(
+                          itemManager, colUid, itemUpdatedFromServer);
                       await cacheClient.dispose();
-                    },
-                    icon: const Icon(Icons.snooze))
-            ]
-          : null,
+
+                      itemListResponse.items.remove(eteItem);
+
+                      itemListResponse.items[itemUpdatedFromServer] =
+                          ItemListItem.fromMap({
+                        "itemContent": contentFromServer,
+                        "itemUid": await itemUpdatedFromServer.getUid(),
+                        "itemIsDeleted":
+                            await itemUpdatedFromServer.isDeleted(),
+                        "itemType":
+                            (await itemUpdatedFromServer.getMeta()).itemType,
+                        "itemName":
+                            (await itemUpdatedFromServer.getMeta()).name,
+                        "mtime": (await itemUpdatedFromServer.getMeta()).mtime,
+                      });
+                      setState(() {
+                        _itemListResponse =
+                            Future<ItemListResponse>.value(itemListResponse);
+                      });
+                    }
+                  }
+                }
+              }
+              if (anyWereChanged) {
+                setState(() {
+                  _itemListResponse = getItemListResponse(
+                      widget.itemManager, widget.client, widget.colUid);
+                });
+              }
+              await cacheClient.dispose();
+            },
+            icon: const Icon(Icons.snooze),
+            tooltip: "Snooze",
+          ),
+      ],
     );
   }
 
@@ -1050,7 +1148,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                       dateSearchStart = DateTime.now()
                           .copyWith(hour: 0, minute: 0, second: 0);
                       _dateSearchStartController.text =
-                          DateFormat("yyyy-MM-dd").format(dateSearchStart!);
+                          intl.DateFormat("yyyy-MM-dd")
+                              .format(dateSearchStart!.toLocal());
                     }
                   });
                 }),
@@ -1075,8 +1174,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                               value?.copyWith(hour: 0, minute: 0, second: 0);
                           _dateSearchStartController.text =
                               dateSearchStart != null
-                                  ? DateFormat("yyyy-MM-dd")
-                                      .format(dateSearchStart!)
+                                  ? intl.DateFormat("yyyy-MM-dd")
+                                      .format(dateSearchStart!.toLocal())
                                   : "";
                         }));
               },
@@ -1101,7 +1200,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                           dateSearchEnd =
                               value?.copyWith(hour: 23, minute: 59, second: 59);
                           _dateSearchEndController.text = dateSearchEnd != null
-                              ? DateFormat("yyyy-MM-dd").format(dateSearchEnd!)
+                              ? intl.DateFormat("yyyy-MM-dd")
+                                  .format(dateSearchEnd!.toLocal())
                               : "";
                         }));
               },
@@ -1177,12 +1277,39 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
               .compareTo((b.icalendar.todo!.priorityInt ??
                   (Priority.low.numericValue + 1)));
 
-      DateTime? aDue = /*a.icalendar.todo!.start ??*/ a.icalendar.todo!.due;
+      final aSnoozeTimeText =
+          a.icalendar.todo!.getProperty("X-MOZ-SNOOZE-TIME")?.textValue;
+
+      DateTime? aSnoozeTime;
+      if (aSnoozeTimeText != null &&
+          (a.icalendar.todo!.start != null || a.icalendar.todo!.due != null)) {
+        aSnoozeTime = DateTime.parse(aSnoozeTimeText);
+        if (!aSnoozeTime
+            .isAfter(a.icalendar.todo!.start ?? a.icalendar.todo!.due!)) {
+          aSnoozeTime = null;
+        }
+      }
+
+      final bSnoozeTimeText =
+          a.icalendar.todo!.getProperty("X-MOZ-SNOOZE-TIME")?.textValue;
+
+      DateTime? bSnoozeTime;
+      if (bSnoozeTimeText != null &&
+          (b.icalendar.todo!.start != null || b.icalendar.todo!.due != null)) {
+        bSnoozeTime = DateTime.parse(bSnoozeTimeText);
+        if (!bSnoozeTime
+            .isAfter(b.icalendar.todo!.start ?? b.icalendar.todo!.due!)) {
+          bSnoozeTime = null;
+        }
+      }
+      DateTime? aDue = /*a.icalendar.todo!.start ??*/
+          aSnoozeTime ?? a.icalendar.todo!.due;
       if (aDue == null && (a.icalendar.todo!.relatedTo?.isNotEmpty ?? false)) {
         aDue = /*itemsByUID[a.icalendar.todo!.relatedTo]?.icalendar.todo!.start ??*/
             itemsByUID[a.icalendar.todo!.relatedTo]?.icalendar.todo!.due;
       }
-      DateTime? bDue = /*a.icalendar.todo!.start ??*/ b.icalendar.todo!.due;
+      DateTime? bDue = /*a.icalendar.todo!.start ??*/
+          bSnoozeTime ?? b.icalendar.todo!.due;
       if (bDue == null && (b.icalendar.todo!.relatedTo?.isNotEmpty ?? false)) {
         bDue = /*itemsByUID[b.icalendar.todo!.relatedTo]?.icalendar.todo!.start ??*/
             itemsByUID[b.icalendar.todo!.relatedTo]?.icalendar.todo!.due;
@@ -1289,13 +1416,16 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
         Priority.medium => Colors.orange,
         Priority.high => Colors.red,
       };
-      final textDirection = Bidi.detectRtlDirectionality(compTodo.summary ?? "")
-          ? TextDirection.RTL
-          : TextDirection.LTR;
+      final textDirection =
+          intl.Bidi.detectRtlDirectionality(compTodo.summary ?? "")
+              ? TextDirection.rtl
+              : TextDirection.ltr;
+
       final child = ListTile(
         leading: Text(
           dateForLogicDue != null
-              ? (DateFormat(DateFormat.HOUR24_MINUTE).format(dateForLogicDue) +
+              ? (intl.DateFormat(intl.DateFormat.HOUR24_MINUTE)
+                      .format(dateForLogicDue.toLocal()) +
                   (DateUtils.isSameDay(dateForLogicDue,
                           today.subtract(const Duration(days: 1)))
                       ? " ${AppLocalizations.of(context)!.yesterday}"
@@ -1311,7 +1441,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                   : null),
         ),
         title: Column(
-            crossAxisAlignment: textDirection == TextDirection.RTL
+            crossAxisAlignment: textDirection == TextDirection.rtl
                 ? CrossAxisAlignment.end
                 : CrossAxisAlignment.start,
             children: [
@@ -1327,18 +1457,18 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
         selected: _selectedTasks.containsKey(item.value["itemUid"]),
         selectedTileColor: Colors.grey[100],
         subtitle: Row(
-            mainAxisAlignment: textDirection == TextDirection.LTR
+            mainAxisAlignment: textDirection == TextDirection.ltr
                 ? MainAxisAlignment.end
                 : MainAxisAlignment.start,
             children: <Widget>[
               Row(
                 children: [
-                  dateForLogicStart != null &&
-                          (dateForLogicStart.isAfter(today) ||
-                              (dateForLogicStart.day < today.day))
-                      ? Chip(
-                          label: RichText(
-                              text: TextSpan(children: [
+                  if (dateForLogicStart != null &&
+                      (dateForLogicStart.isAfter(today) ||
+                          (dateForLogicStart.day < today.day)))
+                    Chip(
+                      label: RichText(
+                        text: TextSpan(children: [
                           TextSpan(
                               text: ((DateUtils.isSameDay(
                                           dateForLogicStart, today) ||
@@ -1346,9 +1476,10 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                                           dateForLogicStart,
                                           today.subtract(
                                               const Duration(days: 1))))
-                                  ? (DateFormat.Hm()).format(dateForLogicStart)
-                                  : DateFormat("yyyy-MM-dd")
-                                      .format(dateForLogicStart)),
+                                  ? (intl.DateFormat.Hm())
+                                      .format(dateForLogicStart.toLocal())
+                                  : intl.DateFormat("yyyy-MM-dd")
+                                      .format(dateForLogicStart.toLocal())),
                               style: const TextStyle(color: Colors.black87)),
                           const WidgetSpan(
                               child: Icon(
@@ -1356,27 +1487,12 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                                 color: Colors.black87,
                               ),
                               alignment: PlaceholderAlignment.middle)
-                        ])))
-                      : Container(),
-                  if (false)
-                    Chip(
-                        label: RichText(
-                            text: TextSpan(children: [
-                      TextSpan(
-                          text: dateForLogicDue != null
-                              ? (DateUtils.isSameDay(dateForLogicDue, today)
-                                  ? (DateFormat.Hm()).format(dateForLogicDue)
-                                  : DateFormat("yyyy-MM-dd")
-                                      .format(dateForLogicDue))
-                              : null,
-                          style: const TextStyle(color: Colors.black87)),
-                      const WidgetSpan(
-                          child: Icon(
-                            Icons.punch_clock,
-                            color: Colors.black87,
-                          ),
-                          alignment: PlaceholderAlignment.middle)
-                    ]))),
+                        ]),
+                        textScaler: const TextScaler.linear(0.8),
+                      ),
+                      labelPadding: const EdgeInsets.all(2),
+                    ),
+                  // if (false) dueDateChip(dateForLogicDue),
                 ],
               ),
               const VerticalDivider(),
@@ -1385,17 +1501,21 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                   mainAxisSize: MainAxisSize.max,
                   children: (compTodo.categories
                           ?.map((e) => Chip(
-                                label: Text(e),
+                                label: Text(
+                                  e,
+                                  textScaler: const TextScaler.linear(0.8),
+                                ),
                                 visualDensity: VisualDensity.compact,
+                                labelPadding: const EdgeInsets.all(2),
                               ))
                           .toList() ??
                       [])),
               if (isSnoozed)
                 Padding(
-                    padding: EdgeInsets.only(left: 8),
+                    padding: const EdgeInsets.only(left: 8),
                     child: Text(
-                        "snoozed: ${DateFormat("yyyy-MM-dd HH:mm").format(snoozeTime!.toLocal())}",
-                        style: TextStyle(color: Colors.orange))),
+                        "snoozed: ${intl.DateFormat("${DateUtils.isSameDay(snoozeTime!.toLocal(), DateTime.now()) ? "" : "yyyy-MM-dd "}HH:mm").format(snoozeTime.toLocal())}",
+                        style: const TextStyle(color: Colors.orange))),
             ]),
         trailing: IconButton(
           icon: Icon(icalendar.todo!.recurrenceRule != null
@@ -1422,14 +1542,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                           itemManager, colUid, value["item"]);
                       await cacheClient.dispose();
                       fullSnapshot.items.remove(eteItem);
-                      fullSnapshot.items[value["item"]] = ItemListItem.fromMap({
-                        "itemContent": value["itemContent"],
-                        "itemUid": value["itemUid"],
-                        "itemIsDeleted": value["itemIsDeleted"],
-                        "itemType": value["itemType"],
-                        "itemName": value["itemName"],
-                        "mtime": value["mtime"],
-                      });
+                      fullSnapshot.items[value["item"]] =
+                          ItemListItem.fromMap(value);
                       setState(() {
                         _itemListResponse =
                             Future<ItemListResponse>.value(fullSnapshot);
@@ -1524,14 +1638,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
           if (value != null) {
             fullSnapshot.items.remove(eteItem);
 
-            fullSnapshot.items[value["item"]] = ItemListItem.fromMap({
-              "itemContent": value["itemContent"],
-              "itemUid": value["itemUid"],
-              "itemIsDeleted": value["itemIsDeleted"],
-              "itemType": value["itemType"],
-              "mtime": value["mtime"],
-              "itemName": value["itemName"],
-            });
+            fullSnapshot.items[value["item"]] = ItemListItem.fromMap(value);
             setState(() {
               _itemListResponse = Future<ItemListResponse>.value(fullSnapshot);
             });
@@ -1546,6 +1653,27 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       children.add(child);
     }
     return children;
+  }
+
+  Chip dueDateChip(DateTime? dateForLogicDue) {
+    return Chip(
+        label: RichText(
+            text: TextSpan(children: [
+      TextSpan(
+          text: dateForLogicDue != null
+              ? (DateUtils.isSameDay(dateForLogicDue, today)
+                  ? (intl.DateFormat.Hm()).format(dateForLogicDue.toLocal())
+                  : intl.DateFormat("yyyy-MM-dd")
+                      .format(dateForLogicDue.toLocal()))
+              : null,
+          style: const TextStyle(color: Colors.black87)),
+      const WidgetSpan(
+          child: Icon(
+            Icons.punch_clock,
+            color: Colors.black87,
+          ),
+          alignment: PlaceholderAlignment.middle)
+    ])));
   }
 
   void filterItems(
@@ -1628,6 +1756,10 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     if (sequenceChange) {
       todoComp.sequence = (todoComp.sequence ?? 0) + 1;
     }
+
+    if (todoComp.getProperty("X-MOZ-SNOOZE-TIME") != null) {
+      todoComp.removeProperty("X-MOZ-SNOOZE-TIME");
+    }
     final nextTodo = (statusChanged &&
             (todoComp.status == TodoStatus.completed ||
                 todoComp.status == TodoStatus.cancelled))
@@ -1639,25 +1771,19 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     final itemMetaClone = (await itemClone.getMeta())
         .copyWith(mtime: nextTodo?.lastModified ?? todoComp.lastModified);
     await itemClone.setMeta(itemMetaClone);
-    if (kDebugMode) {
-      print("--------BEGIN Intended changes---------");
-      print("ETAG: ${await itemClone.getEtag()}");
-      print(actualNextTodo.parent!.toString());
-      print("--------END Intended changes-----------");
-    }
 
     await itemClone.setContent(utf8.encode(actualNextTodo.parent!.toString()));
     await itemManager.transaction([itemClone]);
     await eteItem.setContent(await itemClone.getContent());
     final eteItemFromServer = await itemManager.fetch(await eteItem.getUid());
+    var contentFromServer = await eteItemFromServer.getContent();
     final icalendarUpdated =
-        VComponent.parse(utf8.decode(await eteItemFromServer.getContent()))
-            as VCalendar;
+        VComponent.parse(utf8.decode(contentFromServer)) as VCalendar;
     return {
       "item": eteItemFromServer,
       "itemSentToServer": itemClone,
       "icalendar": icalendarUpdated,
-      "itemContent": (await eteItemFromServer.getContent()),
+      "itemContent": contentFromServer,
       "todo": icalendarUpdated.todo!,
       "itemIsDeleted": (await eteItemFromServer.isDeleted()),
       "itemUid": (await eteItemFromServer.getUid()),
@@ -1764,6 +1890,118 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       print(actualNextTodo.parent!.toString());
       print("--------END Intended changes-----------");
     }
+
+    await itemClone.setContent(utf8.encode(actualNextTodo.parent!.toString()));
+    await itemManager.transaction([itemClone]);
+    await eteItem.setContent(await itemClone.getContent());
+    final eteItemFromServer = await itemManager.fetch(await eteItem.getUid());
+    final icalendarUpdated =
+        VComponent.parse(utf8.decode(await eteItemFromServer.getContent()))
+            as VCalendar;
+    return {
+      "item": eteItemFromServer,
+      "itemSentToServer": itemClone,
+      "icalendar": icalendarUpdated,
+      "itemContent": (await eteItemFromServer.getContent()),
+      "todo": icalendarUpdated.todo!,
+      "itemIsDeleted": (await eteItemFromServer.isDeleted()),
+      "itemUid": (await eteItemFromServer.getUid()),
+    };
+  }
+
+  Future<Map<String, dynamic>?> onPressedModifySnooze(
+      EtebaseItem eteItem,
+      VCalendar icalendar,
+      EtebaseItemManager itemManager,
+      VTodo compTodo,
+      BuildContext context) async {
+    final itemClone = await eteItem.clone();
+    final todoComp = compTodo;
+    bool sequenceChange = false;
+    final changedStatus = todoComp.status;
+    DateTime? updatedSnoozeDate = todoComp.due;
+    if (context.mounted) {
+      updatedSnoozeDate = await showDatePicker(
+              context: context,
+              firstDate: DateTime(2000),
+              lastDate: DateTime(2100),
+              initialDate: (todoComp.due ?? todoComp.start ?? DateTime.now()),
+              currentDate: (DateTime.now()))
+          .then((DateTime? date) async {
+        if (date != null) {
+          final time = await showTimePicker(
+            context: context,
+            initialTime: TimeOfDay.fromDateTime(
+                todoComp.due ?? todoComp.start ?? DateTime.now()),
+          );
+          return time != null
+              ? date.copyWith(hour: time.hour, minute: time.minute)
+              : null;
+        } else {
+          return null;
+        }
+      });
+
+      if (updatedSnoozeDate == null) {
+        return null;
+      }
+    }
+
+    /*
+                            
+                            sequence must change if:
+                            o  "DTSTART"
+                            
+                            o  "DTEND"
+                            
+                            o  "DURATION"
+                            
+                            o  "DUE"
+                            
+                            o  "RRULE"
+                            
+                            o  "RDATE"
+                            
+                            o  "EXDATE"
+                            
+                            o  "STATUS"
+                            */
+    bool statusChanged = false;
+    if (changedStatus != todoComp.status) {
+      todoComp.status = changedStatus;
+      sequenceChange = true;
+      statusChanged = true;
+    }
+
+    if (updatedSnoozeDate != null && updatedSnoozeDate != todoComp.due) {
+      todoComp.setProperty(DateTimeProperty.create(
+          "X-MOZ-SNOOZE-TIME", updatedSnoozeDate.toUtc())!);
+      todoComp.setProperty(
+          DateTimeProperty.create("X-MOZ-LASTACK", DateTime.now().toUtc())!);
+      todoComp.setProperty(IntegerProperty.create(
+          "X-MOZ-GENERATION",
+          int.parse(
+                  todoComp.getProperty("X-MOZ-GENERATION")?.textValue ?? "0") +
+              1)!);
+      sequenceChange = true;
+    }
+
+    todoComp.lastModified = DateTime.now();
+
+    if (sequenceChange) {
+      todoComp.sequence = (todoComp.sequence ?? 0) + 1;
+    }
+    final nextTodo = (statusChanged &&
+            (todoComp.status == TodoStatus.completed ||
+                todoComp.status == TodoStatus.cancelled))
+        ? getNextOccurrence(todoComp, todoComp.recurrenceRule)
+        : todoComp;
+
+    final actualNextTodo = nextTodo ?? todoComp;
+    actualNextTodo.checkValidity();
+    final itemMetaClone = (await itemClone.getMeta())
+        .copyWith(mtime: nextTodo?.lastModified ?? todoComp.lastModified);
+    await itemClone.setMeta(itemMetaClone);
 
     await itemClone.setContent(utf8.encode(actualNextTodo.parent!.toString()));
     await itemManager.transaction([itemClone]);
