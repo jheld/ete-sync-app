@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:auto_direction/auto_direction.dart';
+import 'dart:ui';
 import 'package:collection/collection.dart';
 import 'package:datetime_picker_formfield_new/datetime_picker_formfield.dart';
 import 'package:enough_icalendar/enough_icalendar.dart';
@@ -10,10 +10,12 @@ import 'package:flutter/foundation.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 
 import 'package:flutter_input_chips/flutter_input_chips.dart';
 
-import 'package:intl/intl.dart';
+import 'package:intl/intl.dart' hide TextDirection;
+
 import 'package:pretty_diff_text/pretty_diff_text.dart';
 import 'package:rrule_generator/rrule_generator.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
@@ -944,8 +946,11 @@ class _EtebaseItemRouteState extends State<EtebaseItemRoute> {
                 Form(
                     key: _formKey,
                     child: Column(children: [
-                      AutoDirection(
-                          text: summaryController.text,
+                      Directionality(
+                          textDirection: Bidi.detectRtlDirectionality(
+                                  summaryController.text)
+                              ? TextDirection.rtl
+                              : TextDirection.ltr,
                           child: TextFormField(
                             controller: summaryController,
                             validator: (String? value) {
@@ -1146,8 +1151,11 @@ class _EtebaseItemRouteState extends State<EtebaseItemRoute> {
                           ),
                         ],
                       ),
-                      AutoDirection(
-                          text: descriptionController.text,
+                      Directionality(
+                          textDirection: Bidi.detectRtlDirectionality(
+                                  descriptionController.text)
+                              ? TextDirection.rtl
+                              : TextDirection.ltr,
                           child: TextFormField(
                             controller: descriptionController,
                             validator: (String? value) {

@@ -1,11 +1,11 @@
 import 'dart:convert';
 
-import 'package:auto_direction/auto_direction.dart';
 import 'package:ete_sync_app/util.dart';
 import 'package:etebase_flutter/etebase_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:intl/intl.dart' as intl;
 
 class EtebaseItemNoteCreateRoute extends StatefulWidget {
   const EtebaseItemNoteCreateRoute(
@@ -48,13 +48,15 @@ class _EtebaseItemNoteCreateRouteState
               key: _formKey,
               child: Column(
                 children: [
-                  AutoDirection(
-                      text: nameController.text,
-                      child: TextFormField(
-                          controller: nameController,
-                          decoration: InputDecoration(
-                              labelText: AppLocalizations.of(context)!.title),
-                          onChanged: (value) => ())),
+                  TextFormField(
+                      controller: nameController,
+                      textDirection:
+                          intl.Bidi.detectRtlDirectionality(nameController.text)
+                              ? TextDirection.rtl
+                              : TextDirection.ltr,
+                      decoration: InputDecoration(
+                          labelText: AppLocalizations.of(context)!.title),
+                      onChanged: (value) => ()),
                   Switch(
                       value: showMarkdown,
                       onChanged: (value) => setState(() {
@@ -62,20 +64,24 @@ class _EtebaseItemNoteCreateRouteState
                           })),
                   const Divider(),
                   !showMarkdown
-                      ? AutoDirection(
-                          text: contentController.text,
-                          child: TextFormField(
-                            controller: contentController,
-                            decoration: InputDecoration(
-                                labelText:
-                                    AppLocalizations.of(context)!.content),
-                            maxLines: null,
-                            onChanged: (value) => (),
-                          ))
+                      ? TextFormField(
+                          controller: contentController,
+                          textDirection: intl.Bidi.detectRtlDirectionality(
+                                  contentController.text)
+                              ? TextDirection.rtl
+                              : TextDirection.ltr,
+                          decoration: InputDecoration(
+                              labelText: AppLocalizations.of(context)!.content),
+                          maxLines: null,
+                          onChanged: (value) => (),
+                        )
                       : SizedBox(
                           height: 600,
-                          child: AutoDirection(
-                              text: contentController.text,
+                          child: Directionality(
+                              textDirection: intl.Bidi.detectRtlDirectionality(
+                                      contentController.text)
+                                  ? TextDirection.rtl
+                                  : TextDirection.ltr,
                               child: Markdown(data: contentController.text))),
                   TextButton(
                       onPressed: () async {
@@ -128,8 +134,6 @@ class _EtebaseItemNoteCreateRouteState
         ));
   }
 }
-
-
 
 class EtebaseItemNoteRoute extends StatefulWidget {
   const EtebaseItemNoteRoute(
@@ -194,8 +198,11 @@ class _EtebaseItemNoteRouteState extends State<EtebaseItemNoteRoute> {
             Form(
               key: _formKey,
               child: Column(children: [
-                AutoDirection(
-                    text: nameController.text,
+                Directionality(
+                    textDirection:
+                        intl.Bidi.detectRtlDirectionality(nameController.text)
+                            ? TextDirection.rtl
+                            : TextDirection.ltr,
                     child: TextFormField(
                         controller: nameController,
                         decoration: const InputDecoration(labelText: "Title"),
@@ -207,8 +214,11 @@ class _EtebaseItemNoteRouteState extends State<EtebaseItemNoteRoute> {
                         })),
                 const Divider(),
                 !showMarkdown
-                    ? AutoDirection(
-                        text: contentController.text,
+                    ? Directionality(
+                        textDirection: intl.Bidi.detectRtlDirectionality(
+                                contentController.text)
+                            ? TextDirection.rtl
+                            : TextDirection.ltr,
                         child: TextFormField(
                           controller: contentController,
                           decoration: InputDecoration(
@@ -218,8 +228,11 @@ class _EtebaseItemNoteRouteState extends State<EtebaseItemNoteRoute> {
                         ))
                     : SizedBox(
                         height: 600,
-                        child: AutoDirection(
-                            text: contentController.text,
+                        child: Directionality(
+                            textDirection: intl.Bidi.detectRtlDirectionality(
+                                    contentController.text)
+                                ? TextDirection.rtl
+                                : TextDirection.ltr,
                             child: Markdown(data: contentController.text))),
               ]),
             ),

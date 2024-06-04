@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:auto_direction/auto_direction.dart';
 import 'package:enough_icalendar/enough_icalendar.dart';
 
 import 'package:ete_sync_app/etebase_item_route.dart';
@@ -13,7 +12,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:intl/intl.dart' as intl;
+import 'package:intl/intl.dart' as intl hide TextDirection;
 import 'package:provider/provider.dart';
 import 'package:rrule/rrule.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -461,8 +460,11 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      AutoDirection(
-                          text: _searchTextController.text,
+                      Directionality(
+                          textDirection: intl.Bidi.detectRtlDirectionality(
+                                  _searchTextController.text)
+                              ? TextDirection.rtl
+                              : TextDirection.ltr,
                           child: SearchBar(
                             controller: _searchTextController,
                             hintText: AppLocalizations.of(context)!.search,
@@ -585,8 +587,12 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
           child: ListTile(
             title: (value.itemName != null &&
                     !itemContentString.startsWith(value.itemName!))
-                ? AutoDirection(
-                    text: value.itemName!, child: Text(value.itemName!))
+                ? Directionality(
+                    textDirection:
+                        intl.Bidi.detectRtlDirectionality(value.itemName!)
+                            ? TextDirection.rtl
+                            : TextDirection.ltr,
+                    child: Text(value.itemName!))
                 : null,
             subtitle: SizedBox(
                 height: 50,
@@ -1445,13 +1451,19 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                 ? CrossAxisAlignment.end
                 : CrossAxisAlignment.start,
             children: [
-              AutoDirection(
-                  text: compTodo.summary ?? "",
+              Directionality(
+                  textDirection:
+                      intl.Bidi.detectRtlDirectionality(compTodo.summary ?? "")
+                          ? TextDirection.rtl
+                          : TextDirection.ltr,
                   child: Text(compTodo.summary ?? "")),
               if (compTodo.description != null &&
                   compTodo.description!.isNotEmpty)
-                AutoDirection(
-                    text: compTodo.description ?? "",
+                Directionality(
+                    textDirection: intl.Bidi.detectRtlDirectionality(
+                            compTodo.description ?? "")
+                        ? TextDirection.rtl
+                        : TextDirection.ltr,
                     child: Text(compTodo.description ?? "")),
             ]),
         selected: _selectedTasks.containsKey(item.value["itemUid"]),
