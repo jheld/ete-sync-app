@@ -32,6 +32,7 @@ migrate_working_dir/
 .pub/
 /build/
 lib/*.dart~
+etesyncapp_*.snap
 
 # Symbolication related
 app.*.symbols

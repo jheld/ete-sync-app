@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Ete Sync App
+Comment=EteSync Tasks App
+Exec=etesyncapp
+Icon=${SNAP}/meta/gui/etesyncapp.png
+Terminal=false
+Type=Application
+Categories=Productivity; # Adjust accordingly your snap category.

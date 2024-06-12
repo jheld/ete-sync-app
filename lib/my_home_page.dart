@@ -6,6 +6,7 @@ import 'package:enough_icalendar/enough_icalendar.dart';
 import 'package:ete_sync_app/etebase_item_route.dart';
 import 'package:ete_sync_app/etebase_note_route.dart';
 import 'package:ete_sync_app/i_calendar_custom_parser.dart';
+import 'package:ete_sync_app/licenses.dart';
 import 'package:ete_sync_app/util.dart';
 import 'package:etebase_flutter/etebase_flutter.dart';
 import 'package:flutter/foundation.dart';
@@ -1069,6 +1070,13 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                   }
                 });
           }),
+      const Divider(),
+      TextButton(
+          onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (BuildContext context) => const LicensesWidget())),
+          child: const Text("Licenses"))
     ]));
   }
 
