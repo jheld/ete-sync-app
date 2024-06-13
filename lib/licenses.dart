@@ -15,7 +15,7 @@ class LicensesWidget extends StatelessWidget {
             mainAxisSize: MainAxisSize.max,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              SelectableText(
                   "\"'There is a Phabricator task for that!' Sticker version 2A\" by takidelfin is marked with CC0 1.0. To view the terms, visit https://creativecommons.org/publicdomain/zero/1.0/deed.en/?ref=openverse.")
             ],
           ),
