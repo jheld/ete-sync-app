@@ -37,7 +37,7 @@ dependencies:
   enough_icalendar: ^0.16.0
   datetime_picker_formfield_new: ^2.1.0
 
-  rrule_generator: ^0.5.6
+  rrule_generator: ^0.8.3
   uuid: ^4.2.2
   rrule: ^0.2.16
   timezone: ^0.9.2
@@ -46,14 +46,14 @@ dependencies:
   logging: ^1.2.0
   flutter_secure_storage: ^9.0.0
   window_manager: ^0.3.8
-  calendar_date_picker2: ^0.5.5
-  pretty_diff_text: ^1.0.0
+  calendar_date_picker2: ^1.0.6
+  pretty_diff_text: ^2.0.0
   flutter_input_chips: ^1.0.3
   shared_preferences: ^2.2.2
   url_launcher: ^6.2.5
   path_provider: ^2.1.2
   provider: ^6.1.2
-  flutter_markdown: ^0.6.22+1
+  flutter_markdown: ^0.7.2
 
 
 dev_dependencies:
@@ -65,7 +65,7 @@ dev_dependencies:
   # activated in the `analysis_options.yaml` file located at the root of your
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
-  flutter_lints: ^3.0.0
+  flutter_lints: ^4.0.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
