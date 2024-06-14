@@ -1890,7 +1890,15 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       todoComp.due = updatedDueDate;
       sequenceChange = true;
     }
-
+    if (todoComp.getProperty("X-MOZ-SNOOZE-TIME") != null) {
+      todoComp.removeProperty("X-MOZ-SNOOZE-TIME");
+    }
+    if (todoComp.getProperty("X-MOZ-LASTACK") != null) {
+      todoComp.removeProperty("X-MOZ-LASTACK");
+    }
+    if (todoComp.getProperty("X-MOZ-GENERATION") != null) {
+      todoComp.removeProperty("X-MOZ-GENERATION");
+    }
     todoComp.lastModified = DateTime.now();
 
     if (sequenceChange) {
