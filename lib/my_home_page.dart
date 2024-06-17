@@ -1440,10 +1440,10 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
           dateForLogicDue != null
               ? (intl.DateFormat(intl.DateFormat.HOUR24_MINUTE)
                       .format(dateForLogicDue.toLocal()) +
-                  (DateUtils.isSameDay(dateForLogicDue,
+                  (DateUtils.isSameDay(dateForLogicDue.toLocal(),
                           today.subtract(const Duration(days: 1)))
                       ? " ${AppLocalizations.of(context)!.yesterday}"
-                      : (DateUtils.isSameDay(dateForLogicDue,
+                      : (DateUtils.isSameDay(dateForLogicDue.toLocal(),
                               today.add(const Duration(days: 1)))
                           ? " ${AppLocalizations.of(context)!.tomorrow}"
                           : (dateForLogicDue
