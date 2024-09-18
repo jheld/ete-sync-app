@@ -89,6 +89,7 @@ class _EtebaseItemCreateRouteState extends State<EtebaseItemCreateRoute> {
   final _startTimeFieldKey = GlobalKey();
 
   final recurrenceRuleController = TextEditingController();
+  final alarmController = TextEditingController();
 
   @override
   void initState() {
@@ -99,6 +100,14 @@ class _EtebaseItemCreateRouteState extends State<EtebaseItemCreateRoute> {
     startController.text = "";
     dueController.text = "";
     recurrenceRuleController.text = "";
+    const beginVAlarm = """BEGIN:VALARM
+TRIGGER;RELATED=END:PT0S
+ACTION:DISPLAY
+DESCRIPTION:Default Tasks.org description
+END:VALARM""";
+    final beginVAlarmComp = VComponent.parse(beginVAlarm) as VAlarm;
+    alarmController.text = beginVAlarmComp.toString();
+
     _status = TodoStatus.unknown;
     _priority = Priority.undefined;
     alarms = <VAlarm>[];
@@ -112,6 +121,7 @@ class _EtebaseItemCreateRouteState extends State<EtebaseItemCreateRoute> {
     dueController.dispose();
     recurrenceRuleController.dispose();
     descriptionController.dispose();
+    alarmController.dispose();
     super.dispose();
   }
 
@@ -397,6 +407,23 @@ class _EtebaseItemCreateRouteState extends State<EtebaseItemCreateRoute> {
                         );
                       },
                     ),
+                    TextFormField(
+                      controller: alarmController,
+                      decoration: InputDecoration(
+                        labelText: "ALARM",
+                        suffixIcon: IconButton(
+                          onPressed: alarmController.clear,
+                          icon: const Icon(Icons.clear),
+                          tooltip: AppLocalizations.of(context)!.clear,
+                        ),
+                      ),
+                      validator: (String? value) {
+                        // if (value == null || value.isEmpty) {
+                        //   return 'Please enter some text';
+                        // }
+                        return null;
+                      },
+                    ),
                     Column(children: [
                       ListView.builder(
                           shrinkWrap: true,
@@ -567,6 +594,15 @@ class _EtebaseItemCreateRouteState extends State<EtebaseItemCreateRoute> {
             }
             todoComp.uid = VCalendar.createUid();
             todoComp.timeStamp = DateTime.now();
+            if (alarmController.text.isNotEmpty) {
+              final todoAlarmComp = VAlarm(parent: todoComp);
+              todoAlarmComp.trigger = TriggerProperty.createWithDuration(
+                  IsoDuration.parse(alarmController.text),
+                  relation: AlarmTriggerRelationship.end);
+              todoAlarmComp.action = AlarmAction.display;
+              todoAlarmComp.description = "Default Tasks.org description";
+              todoComp.children.add(todoAlarmComp);
+            }
             final nextTodo = (statusChanged &&
                     (todoComp.status == TodoStatus.completed ||
                         todoComp.status == TodoStatus.cancelled))
@@ -651,6 +687,8 @@ class _EtebaseItemRouteState extends State<EtebaseItemRoute> {
 
   final _startTimeFieldKey = GlobalKey();
 
+  final alarmController = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -664,6 +702,25 @@ class _EtebaseItemRouteState extends State<EtebaseItemRoute> {
         ? DateFormat("yyyy-MM-dd HH:mm").format(todoComp.due!.toLocal())
         : "";
     recurrenceRuleController.text = todoComp.recurrenceRule?.toString() ?? "";
+    final beginVAlarm = todoComp.children
+            .where((element) => element.componentType == VComponentType.alarm)
+            .map((element) => element as VAlarm)
+            .toList()
+            .firstOrNull
+            ?.toString() /* ??
+        """BEGIN:VALARM
+TRIGGER;RELATED=END:PT0S
+ACTION:DISPLAY
+DESCRIPTION:Default Tasks.org description
+END:VALARM"""*/
+        ;
+    if (beginVAlarm != null) {
+      final beginVAlarmComp = VComponent.parse(beginVAlarm) as VAlarm;
+      alarmController.text = beginVAlarmComp.toString();
+    } else {
+      alarmController.text = "";
+    }
+
     _status = todoComp.status;
     _priority = todoComp.priority;
     alarms = todoComp.children
@@ -1228,6 +1285,23 @@ class _EtebaseItemRouteState extends State<EtebaseItemRoute> {
                           );
                         },
                       ),
+                      TextFormField(
+                        controller: alarmController,
+                        decoration: InputDecoration(
+                          labelText: "ALARM",
+                          suffixIcon: IconButton(
+                            onPressed: alarmController.clear,
+                            icon: const Icon(Icons.clear),
+                            tooltip: AppLocalizations.of(context)!.clear,
+                          ),
+                        ),
+                        validator: (String? value) {
+                          // if (value == null || value.isEmpty) {
+                          //   return 'Please enter some text';
+                          // }
+                          return null;
+                        },
+                      ),
                       Column(children: [
                         ListView.builder(
                             shrinkWrap: true,
@@ -1376,7 +1450,22 @@ class _EtebaseItemRouteState extends State<EtebaseItemRoute> {
                 .isNotEmpty) {
               todoComp.categories = categories.isNotEmpty ? categories : null;
             }
-
+            if (alarmController.text.isNotEmpty &&
+                alarmController.text !=
+                    todoComp.children
+                        .where((element) =>
+                            element.componentType == VComponentType.alarm)
+                        .map((element) => element as VAlarm)
+                        .toList()
+                        .firstOrNull) {
+              final todoAlarmComp = VAlarm(parent: todoComp);
+              todoAlarmComp.trigger = TriggerProperty.createWithDuration(
+                  IsoDuration.parse(alarmController.text),
+                  relation: AlarmTriggerRelationship.end);
+              todoAlarmComp.action = AlarmAction.display;
+              todoAlarmComp.description = "Default Tasks.org description";
+              todoComp.children.add(todoAlarmComp);
+            }
             if (sequenceChange) {
               todoComp.sequence = (todoComp.sequence ?? 0) + 1;
             }
