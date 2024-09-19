@@ -106,7 +106,7 @@ ACTION:DISPLAY
 DESCRIPTION:Default Tasks.org description
 END:VALARM""";
     final beginVAlarmComp = VComponent.parse(beginVAlarm) as VAlarm;
-    alarmController.text = beginVAlarmComp.toString();
+    alarmController.text = beginVAlarmComp.triggerRelativeDuration!.toString();
 
     _status = TodoStatus.unknown;
     _priority = Priority.undefined;
@@ -716,7 +716,10 @@ END:VALARM"""*/
         ;
     if (beginVAlarm != null) {
       final beginVAlarmComp = VComponent.parse(beginVAlarm) as VAlarm;
-      alarmController.text = beginVAlarmComp.toString();
+      alarmController.text =
+          beginVAlarmComp.triggerRelativeDuration?.toString() ??
+              beginVAlarmComp.triggerDate?.toIso8601String() ??
+              "";
     } else {
       alarmController.text = "";
     }
