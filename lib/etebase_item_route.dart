@@ -1331,48 +1331,48 @@ END:VALARM"""*/
                           );
                         },
                       ),
-                          DropdownButtonFormField(
-                      items: EtebaseAlarmTriggerOptions.values
-                          .map((e) => DropdownMenuItem(
-                                value: e,
-                                child: Text(e.name),
-                              ))
-                          .toList(),
-                      onChanged: (value) {
-                        if (value != null &&
-                            value != EtebaseAlarmTriggerOptions.none) {
-                          setState(() {
-                            alarmController.text = IsoDuration().toString();
-                          });
-                        } else {
-                          setState(() {
-                            alarmController.text = "";
-                          });
-                        }
-                      },
-                      validator: (EtebaseAlarmTriggerOptions? value) {
-                        if (value == null) {
-                          return "can't empty";
-                        } else {
-                          return null;
-                        }
-                      },
-                      decoration: InputDecoration(
-                        labelText: "Alarm Trigger",
-                        suffixIcon: IconButton(
-                          onPressed: () {
+                      DropdownButtonFormField(
+                        items: EtebaseAlarmTriggerOptions.values
+                            .map((e) => DropdownMenuItem(
+                                  value: e,
+                                  child: Text(e.name),
+                                ))
+                            .toList(),
+                        onChanged: (value) {
+                          if (value != null &&
+                              value != EtebaseAlarmTriggerOptions.none) {
+                            setState(() {
+                              alarmController.text = IsoDuration().toString();
+                            });
+                          } else {
                             setState(() {
                               alarmController.text = "";
                             });
-                          },
-                          icon: const Icon(Icons.clear),
-                          tooltip: AppLocalizations.of(context)!.clear,
+                          }
+                        },
+                        validator: (EtebaseAlarmTriggerOptions? value) {
+                          if (value == null) {
+                            return "can't empty";
+                          } else {
+                            return null;
+                          }
+                        },
+                        decoration: InputDecoration(
+                          labelText: "Alarm Trigger",
+                          suffixIcon: IconButton(
+                            onPressed: () {
+                              setState(() {
+                                alarmController.text = "";
+                              });
+                            },
+                            icon: const Icon(Icons.clear),
+                            tooltip: AppLocalizations.of(context)!.clear,
+                          ),
                         ),
+                        value: alarmController.text == ""
+                            ? EtebaseAlarmTriggerOptions.none
+                            : EtebaseAlarmTriggerOptions.end,
                       ),
-                      value: alarmController.text == ""
-                          ? EtebaseAlarmTriggerOptions.none
-                          : EtebaseAlarmTriggerOptions.end,
-                    ),
                       TextFormField(
                         controller: alarmController,
                         decoration: InputDecoration(
@@ -1390,7 +1390,7 @@ END:VALARM"""*/
                           return null;
                         },
                       ),
-                      Column(children: [
+                      /* Column(children: [
                         ListView.builder(
                             shrinkWrap: true,
                             itemCount: alarms.length,
@@ -1416,23 +1416,10 @@ END:VALARM"""*/
                                     return null;
                                   },
                                 ),
-                                /*subtitle: TextFormField(initialValue: alarms[index].repeat.toString(),
-                          keyboardType: TextInputType.number,
-                          validator: (value) {
-                            if (value == null || value == "" || int.tryParse(value) == null || (int.tryParse(value)! < 0)) {
-                              return 'Must be non-negative number';
-                            } else {
-                              return null;
-                            }
-                            
-                      }, decoration: InputDecoration(labelText: "Alarm action repeat"), onChanged: (value) {
-                        if (alarms[index] != null && int.tryParse(value) != null && int.tryParse(value)! >= 0) {
-                          alarms[index].repeat = int.parse(value);
-                          }
-                    },),*/
+                          
                               );
                             }),
-                      ]),
+                      ]),*/
                     ])),
               ],
             ),
