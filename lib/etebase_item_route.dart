@@ -61,6 +61,12 @@ MaterialColor priorityColor(Priority priority) {
   };
 }
 
+enum EtebaseAlarmTriggerOptions {
+  none,
+  start,
+  end,
+}
+
 class EtebaseItemCreateRoute extends StatefulWidget {
   const EtebaseItemCreateRoute({
     super.key,
@@ -407,15 +413,52 @@ END:VALARM""";
                         );
                       },
                     ),
-                    TextFormField(
-                      controller: alarmController,
+                    DropdownButtonFormField(
+                      items: EtebaseAlarmTriggerOptions.values
+                          .map((e) => DropdownMenuItem(
+                                value: e,
+                                child: Text(e.name),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null &&
+                            value != EtebaseAlarmTriggerOptions.none) {
+                          setState(() {
+                            alarmController.text = IsoDuration().toString();
+                          });
+                        } else {
+                          setState(() {
+                            alarmController.text = "";
+                          });
+                        }
+                      },
+                      validator: (EtebaseAlarmTriggerOptions? value) {
+                        if (value == null) {
+                          return "can't empty";
+                        } else {
+                          return null;
+                        }
+                      },
                       decoration: InputDecoration(
-                        labelText: "ALARM",
+                        labelText: "Alarm Trigger",
                         suffixIcon: IconButton(
-                          onPressed: alarmController.clear,
+                          onPressed: () {
+                            setState(() {
+                              alarmController.text = "";
+                            });
+                          },
                           icon: const Icon(Icons.clear),
                           tooltip: AppLocalizations.of(context)!.clear,
                         ),
+                      ),
+                      value: alarmController.text == ""
+                          ? EtebaseAlarmTriggerOptions.none
+                          : EtebaseAlarmTriggerOptions.end,
+                    ),
+                    TextFormField(
+                      controller: alarmController,
+                      decoration: const InputDecoration(
+                        labelText: "Alarm Trigger Value",
                       ),
                       validator: (String? value) {
                         // if (value == null || value.isEmpty) {
@@ -1288,10 +1331,52 @@ END:VALARM"""*/
                           );
                         },
                       ),
+                          DropdownButtonFormField(
+                      items: EtebaseAlarmTriggerOptions.values
+                          .map((e) => DropdownMenuItem(
+                                value: e,
+                                child: Text(e.name),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        if (value != null &&
+                            value != EtebaseAlarmTriggerOptions.none) {
+                          setState(() {
+                            alarmController.text = IsoDuration().toString();
+                          });
+                        } else {
+                          setState(() {
+                            alarmController.text = "";
+                          });
+                        }
+                      },
+                      validator: (EtebaseAlarmTriggerOptions? value) {
+                        if (value == null) {
+                          return "can't empty";
+                        } else {
+                          return null;
+                        }
+                      },
+                      decoration: InputDecoration(
+                        labelText: "Alarm Trigger",
+                        suffixIcon: IconButton(
+                          onPressed: () {
+                            setState(() {
+                              alarmController.text = "";
+                            });
+                          },
+                          icon: const Icon(Icons.clear),
+                          tooltip: AppLocalizations.of(context)!.clear,
+                        ),
+                      ),
+                      value: alarmController.text == ""
+                          ? EtebaseAlarmTriggerOptions.none
+                          : EtebaseAlarmTriggerOptions.end,
+                    ),
                       TextFormField(
                         controller: alarmController,
                         decoration: InputDecoration(
-                          labelText: "ALARM",
+                          labelText: "Alarm Trigger Value",
                           suffixIcon: IconButton(
                             onPressed: alarmController.clear,
                             icon: const Icon(Icons.clear),
