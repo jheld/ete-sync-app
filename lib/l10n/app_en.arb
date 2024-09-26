@@ -22,5 +22,8 @@
     "search": "Search",
     "filters": "Filters",
     "priority": "Priority",
+    "alarmTriggerNone": "None",
+    "alarmTriggerStart": "When started",
+    "alarmTriggerEnd": "When due",
     "language": "Language"
 }

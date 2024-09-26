@@ -93,6 +93,7 @@ class _EtebaseItemCreateRouteState extends State<EtebaseItemCreateRoute> {
   List<VAlarm> alarms = [];
   List<String> categories = [];
   final _startTimeFieldKey = GlobalKey();
+  final _alarmFieldKey = GlobalKey();
 
   final recurrenceRuleController = TextEditingController();
   final alarmController = TextEditingController();
@@ -148,6 +149,18 @@ END:VALARM""";
         return AppLocalizations.of(context)!.hideUntilSpecificDay;
       case StartDateTimeOptions.hideUntilSpecificDayTime:
         return AppLocalizations.of(context)!.hideUntilSpecificDayTime;
+    }
+  }
+
+  String localizedEtebaseAlarmTriggerOption(
+      EtebaseAlarmTriggerOptions option, BuildContext context) {
+    switch (option) {
+      case EtebaseAlarmTriggerOptions.none:
+        return AppLocalizations.of(context)!.alarmTriggerNone;
+      case EtebaseAlarmTriggerOptions.start:
+        return AppLocalizations.of(context)!.alarmTriggerStart;
+      case EtebaseAlarmTriggerOptions.end:
+        return AppLocalizations.of(context)!.alarmTriggerEnd;
     }
   }
 
@@ -414,10 +427,12 @@ END:VALARM""";
                       },
                     ),
                     DropdownButtonFormField(
+                      key: _alarmFieldKey,
                       items: EtebaseAlarmTriggerOptions.values
                           .map((e) => DropdownMenuItem(
                                 value: e,
-                                child: Text(e.name),
+                                child: Text(localizedEtebaseAlarmTriggerOption(
+                                    e, context)),
                               ))
                           .toList(),
                       onChanged: (value) {

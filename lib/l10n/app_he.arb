@@ -19,5 +19,8 @@
     "createNewNote": "יצירת פתק חדש",
     "filters": "סינונים",
     "priority": "עדיפות",
+    "alarmTriggerNone": "ללא",
+    "alarmTriggerStart": "במועד ההתחלה",
+    "alarmTriggerEnd": "במועד היעד",
     "language": "שפה"
 }
