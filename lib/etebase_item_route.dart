@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:ui';
 import 'package:collection/collection.dart';
 import 'package:datetime_picker_formfield_new/datetime_picker_formfield.dart';
 import 'package:enough_icalendar/enough_icalendar.dart';
@@ -10,7 +9,6 @@ import 'package:flutter/foundation.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
 
 import 'package:flutter_input_chips/flutter_input_chips.dart';
 
@@ -61,11 +59,7 @@ MaterialColor priorityColor(Priority priority) {
   };
 }
 
-enum EtebaseAlarmTriggerOptions {
-  none,
-  start,
-  end,
-}
+enum EtebaseAlarmTriggerOptions { none, start, end }
 
 class EtebaseItemCreateRoute extends StatefulWidget {
   const EtebaseItemCreateRoute({
@@ -302,6 +296,9 @@ END:VALARM""";
                                   initialDate: currentValue ?? DateTime.now(),
                                   lastDate: DateTime(2100),
                                 ).then((DateTime? date) async {
+                                  if (!context.mounted) {
+                                    return null;
+                                  }
                                   if (date != null) {
                                     if (startDateTimeOption ==
                                         StartDateTimeOptions
@@ -343,6 +340,9 @@ END:VALARM""";
                           currentDate: DateTime.now(),
                           lastDate: DateTime(2100),
                         ).then((DateTime? date) async {
+                          if (!context.mounted) {
+                            return null;
+                          }
                           if (date != null) {
                             final time = await showTimePicker(
                               context: context,
@@ -1216,6 +1216,9 @@ END:VALARM"""*/
                                               currentValue ?? DateTime.now(),
                                           lastDate: DateTime(2100),
                                         ).then((DateTime? date) async {
+                                          if (!context.mounted) {
+                                            return null;
+                                          }
                                           if (date != null) {
                                             if (startDateTimeOption ==
                                                 StartDateTimeOptions
@@ -1267,6 +1270,9 @@ END:VALARM"""*/
                                   initialDate: currentValue ?? DateTime.now(),
                                   lastDate: DateTime(2100),
                                 ).then((DateTime? date) async {
+                                  if (!context.mounted) {
+                                    return null;
+                                  }
                                   if (date != null) {
                                     final time = await showTimePicker(
                                       context: context,
@@ -1563,6 +1569,10 @@ END:VALARM"""*/
                         .where((element) =>
                             element.componentType == VComponentType.alarm)
                         .map((element) => element as VAlarm)
+                        .map((element) =>
+                            element.triggerRelativeDuration?.toString() ??
+                            element.triggerDate?.toIso8601String() ??
+                            "")
                         .toList()
                         .firstOrNull) {
               final todoAlarmComp = VAlarm(parent: todoComp);
