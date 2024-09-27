@@ -45,7 +45,7 @@ dependencies:
   etebase_flutter: ^1.1.1
   logging: ^1.2.0
   flutter_secure_storage: ^9.0.0
-  window_manager: ^0.3.8
+  window_manager: ^0.4.2
   calendar_date_picker2: ^1.0.6
   pretty_diff_text: ^2.0.0
   flutter_input_chips: ^1.0.3
