@@ -5,6 +5,8 @@ import 'package:ete_sync_app/util.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:sqlite3/open.dart';
+import 'package:sqlite3/sqlite3.dart';
 
 import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 
@@ -15,6 +17,7 @@ import 'package:window_manager/window_manager.dart';
 
 Future<void> main() async {
   await setupWindow();
+
   tz.initializeTimeZones();
 
   final locale = await getPrefLocale();
@@ -81,6 +84,9 @@ class _MyAppState extends State<MyApp> {
                     itemManager: snapshot.data![1],
                     colUid: snapshot.data![2],
                     colType: snapshot.data![6],
+                    db: snapshot.data![7],
+                    username: snapshot.data![8],
+                    cacheDir: snapshot.data![9],
                   );
                 }
               } else {

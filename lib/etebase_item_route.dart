@@ -692,7 +692,8 @@ END:VALARM""";
             final updateVCalendar =
                 VComponent.parse(utf8.decode(updatedItemContent)) as VCalendar;
             final sendingToNavigator = {
-              "item": itemUpdatedFromServer,
+              "item": await widget.itemManager
+                  .cacheSaveWithContent(itemUpdatedFromServer),
               "icalendar": itemUpdatedFromServer,
               "itemContent": updatedItemContent,
               "itemIsDeleted": await itemUpdatedFromServer.isDeleted(),
@@ -1743,7 +1744,8 @@ END:VALARM"""*/
             final updateVCalendar =
                 VComponent.parse(utf8.decode(updatedItemContent)) as VCalendar;
             final sendingToNavigator = {
-              "item": itemUpdatedFromServer,
+              "item": await widget.itemManager
+                  .cacheSaveWithContent(itemUpdatedFromServer),
               "icalendar": itemUpdatedFromServer,
               "itemContent": updatedItemContent,
               "itemIsDeleted": await itemUpdatedFromServer.isDeleted(),

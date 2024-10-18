@@ -283,7 +283,8 @@ class _EtebaseItemNoteRouteState extends State<EtebaseItemNoteRoute> {
             final updatedItemContent = await itemUpdatedFromServer.getContent();
 
             final sendingToNavigator = {
-              "item": itemUpdatedFromServer,
+              "item": await widget.itemManager
+                  .cacheSaveWithContent(itemUpdatedFromServer),
               "itemContent": updatedItemContent,
               "itemIsDeleted": await itemUpdatedFromServer.isDeleted(),
               "itemUid": await itemUpdatedFromServer.getUid(),
@@ -339,7 +340,8 @@ class _EtebaseItemNoteRouteState extends State<EtebaseItemNoteRoute> {
 
             final updatedItemContent = await itemUpdatedFromServer.getContent();
             final sendingToNavigator = {
-              "item": itemUpdatedFromServer,
+              "item": await widget.itemManager
+                  .cacheSaveWithContent(itemUpdatedFromServer),
               "itemContent": updatedItemContent,
               "itemIsDeleted": await itemUpdatedFromServer.isDeleted(),
               "itemUid": await itemUpdatedFromServer.getUid(),
