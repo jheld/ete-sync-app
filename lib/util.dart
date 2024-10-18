@@ -368,7 +368,7 @@ class CollectionListResponse {
 
 Future<ItemListResponse> getItemListResponse(
     EtebaseItemManager itemManager, EtebaseClient client, String colUid,
-    {bool cacheOnly = false, Database? db = null}) async {
+    {bool cacheOnly = false, Database? db}) async {
   final dbHandler = db ?? sqlite3.open(await dbFilePath());
   bool done = false;
   String? stoken;

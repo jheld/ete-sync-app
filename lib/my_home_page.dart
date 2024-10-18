@@ -189,8 +189,9 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
           final itemManager =
               await collectionManager.getItemManager(collection);
           final homePageTitle = (await collection.getMeta()).name;
+          final dbFilePathStr = await dbFilePath();
           if (context.mounted) {
-            final db = sqlite3.open(await dbFilePath());
+            final db = sqlite3.open(dbFilePathStr);
             await Navigator.push(
                 context,
                 MaterialPageRoute(
@@ -1678,15 +1679,10 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
           compTodo.relatedTo!.isNotEmpty &&
           compTodo.start == null &&
           compTodo.due == null) {
-        if (!itemsByUID.containsKey(compTodo.relatedTo!) && false) {
-          print(
-              "related to key ${compTodo.relatedTo!} is not in itemsByUID, hmm.");
-        } else {
-          dateForLogicStart =
-              itemsByUID[compTodo.relatedTo!]!.icalendar.todo!.start;
-          dateForLogicDue =
-              itemsByUID[compTodo.relatedTo!]!.icalendar.todo!.due;
-        }
+        dateForLogicStart =
+            itemsByUID[compTodo.relatedTo!]!.icalendar.todo!.start;
+        dateForLogicDue = itemsByUID[compTodo.relatedTo!]!.icalendar.todo!.due;
+
         // final theIterFromMap = itemsSorted
         //     .where(
         //         (element) => element.icalendar.todo!.uid == compTodo.relatedTo)
