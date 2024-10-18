@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:enough_icalendar/enough_icalendar.dart';
-import 'package:ete_sync_app/etebase_item_model.dart~';
+import 'package:ete_sync_app/etebase_item_model.dart';
 
 import 'package:ete_sync_app/etebase_item_route.dart';
 import 'package:ete_sync_app/etebase_note_model.dart';

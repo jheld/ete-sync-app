@@ -1,6 +1,5 @@
 import 'dart:convert';
 
-import 'package:etebase_flutter/etebase_flutter.dart';
 import 'dart:typed_data';
 
 class EtebaseItemModel {

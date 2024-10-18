@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:enough_icalendar/enough_icalendar.dart';
-import 'package:ete_sync_app/etebase_item_model.dart~';
+import 'package:ete_sync_app/etebase_item_model.dart';
 import 'package:ete_sync_app/etebase_note_model.dart';
 import 'package:ete_sync_app/i_calendar_custom_parser.dart';
 import 'package:etebase_flutter/etebase_flutter.dart';
