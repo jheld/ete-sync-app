@@ -491,7 +491,7 @@ Future<ItemListResponse> getItemListResponse(
             itemName: value["itemName"],
             mtime: value["mtime"],
           )));
-
+  cacheClient.dispose();
   return ItemListResponse(
     items: theMap["items"],
     cacheDir: theMap["cacheDir"],
