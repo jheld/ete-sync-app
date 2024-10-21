@@ -365,9 +365,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       _itemListResponse = getItemListResponse(
               widget.itemManager, widget.client, widget.colUid,
               cacheOnly: !cacheLoaded, db: widget.db)
-          .then((value) async {
-        //dbRowsInsert(value.items.entries, widget.db);
-
+          .then((value) {
+        value.items.clear();
         setState(() {
           cacheLoaded = true;
         });
@@ -375,6 +374,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
         getItemListResponse(widget.itemManager, widget.client, widget.colUid,
                 cacheOnly: !cacheLoaded, db: widget.db)
             .then((value) {
+          value.items.clear();
           setState(() {
             _itemListResponse = Future.value(value);
           });
@@ -471,7 +471,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                               MapEntry(value["item"] as Uint8List,
                                   itemListResponse.items[value["item"]]!)
                             ], widget.db, widget.colType);
-
+                            itemListResponse.items.clear();
                             setState(() {
                               _itemListResponse =
                                   Future<ItemListResponse>.value(
@@ -793,7 +793,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                         dbRowsInsert([
                           MapEntry(value["item"], ItemListItem.fromMap(value)),
                         ], widget.db, widget.colType);
-
+                        itemListResponse.items.clear();
                         setState(() {
                           _itemListResponse =
                               Future<ItemListResponse>.value(itemListResponse);
@@ -880,7 +880,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                                     .mtime,
                               }))
                         ], widget.db, widget.colType);
-
+                        itemListResponse.items.clear();
                         setState(() {
                           _itemListResponse =
                               Future<ItemListResponse>.value(itemListResponse);
@@ -943,6 +943,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                         MapEntry(value["item"], ItemListItem.fromMap(value))
                       ], widget.db, widget.colType);
 
+                      itemListResponse.items.clear();
                       setState(() {
                         _itemListResponse =
                             Future<ItemListResponse>.value(itemListResponse);
@@ -1026,7 +1027,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                                   (await itemUpdatedFromServer.getMeta()).mtime,
                             }))
                       ], widget.db, widget.colType);
-
+                      itemListResponse.items.clear();
                       setState(() {
                         _itemListResponse =
                             Future<ItemListResponse>.value(itemListResponse);
@@ -1864,6 +1865,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                       dbRowsInsert([
                         MapEntry(value["item"], ItemListItem.fromMap(value))
                       ], widget.db, widget.colType);
+                      itemListResponse.items.clear();
                       setState(() {
                         _itemListResponse =
                             Future<ItemListResponse>.value(itemListResponse);
@@ -1940,6 +1942,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                                   await itemManager.cacheSaveWithContent(
                                       itemUpdatedFromServer)]!)
                         ], widget.db, widget.colType);
+                        itemListResponse.items.clear();
                         setState(() {
                           _itemListResponse =
                               Future<ItemListResponse>.value(itemListResponse);
@@ -1972,6 +1975,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
             dbRowsInsert([
               MapEntry(value["item"], itemListResponse.items[value["item"]]!)
             ], widget.db, widget.colType);
+            itemListResponse.items.clear();
             setState(() {
               _itemListResponse =
                   Future<ItemListResponse>.value(itemListResponse);

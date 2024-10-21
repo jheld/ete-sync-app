@@ -444,7 +444,7 @@ Future<ItemListResponse> getItemListResponse(
             break;
           }
         }
-        theMap["items"][itemByteBuffer] = {
+        final theItemListItemAsMap = {
           "itemIsDeleted": await item.isDeleted(),
           "itemUid": itemUid,
           "itemContent": await item.getContent(),
@@ -452,8 +452,9 @@ Future<ItemListResponse> getItemListResponse(
           "itemName": (await item.getMeta()).name,
           "mtime": (await item.getMeta()).mtime,
         };
+        theMap["items"][itemByteBuffer] = theItemListItemAsMap;
         changesSince[itemByteBuffer] =
-            ItemListItem.fromMap(theMap["items"][itemByteBuffer]);
+            ItemListItem.fromMap(theItemListItemAsMap);
       }
 
       dbRowsInsert(changesSince.entries, dbHandler,
@@ -478,6 +479,7 @@ Future<ItemListResponse> getItemListResponse(
     await cacheClient.collectionSaveStoken(colUid, stoken);
   }
 
+  (theMap["items"] as Map<Uint8List, Map<String, dynamic>>).clear();
   theMap["items"] = (theMap["items"] as Map<Uint8List, Map<String, dynamic>>)
       .map((key, value) => MapEntry(
           key,
