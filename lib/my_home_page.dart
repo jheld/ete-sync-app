@@ -1970,7 +1970,6 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
             .then((value) {
           if (value != null) {
             itemListResponse.items.remove(eteItem);
-
             itemListResponse.items[value["item"]] = ItemListItem.fromMap(value);
             dbRowsInsert([
               MapEntry(value["item"], itemListResponse.items[value["item"]]!)

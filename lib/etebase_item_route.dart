@@ -1018,6 +1018,7 @@ END:VALARM"""*/
                           in await itemRevisionListResponse.getData()) {
                         eteItemRevisionList.add(RevisionItemWrapper(
                             revision: element,
+                            uid: await element.getUid(),
                             mtime: (await element.getMeta()).mtime));
                       }
 
@@ -1685,7 +1686,8 @@ END:VALARM"""*/
             final updateVCalendar =
                 VComponent.parse(utf8.decode(updatedItemContent)) as VCalendar;
             final sendingToNavigator = {
-              "item": itemUpdatedFromServer,
+              "item": await widget.itemManager
+                  .cacheSaveWithContent(itemUpdatedFromServer),
               "icalendar": itemUpdatedFromServer,
               "itemContent": updatedItemContent,
               "itemIsDeleted": await itemUpdatedFromServer.isDeleted(),
@@ -1764,10 +1766,12 @@ END:VALARM"""*/
 class RevisionItemWrapper {
   final EtebaseItem revision;
   final DateTime? mtime;
+  final String uid;
 
   RevisionItemWrapper({
     required this.revision,
     required this.mtime,
+    required this.uid,
   });
 }
 
@@ -1787,7 +1791,7 @@ class _RevisionStatefulWidgetState extends State<RevisionStatefulWidget> {
     final revisionChildren = <Widget>[];
     for (final element in widget.revisions) {
       final elementWidget = ListTile(
-          title: Text(element.mtime!.toString()),
+          title: Text(element.mtime!.toIso8601String()),
           onLongPress: () {
             setState(() {
               if (toDiff.contains(element)) {
