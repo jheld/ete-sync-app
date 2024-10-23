@@ -1,6 +1,7 @@
 {
   "appId": "com.ete_sync_app.ete_sync_app",
   "releases": [
+    { "version": "1.0.20+23", "date": "2024-10-22" },
     {
       "version": "1.0.19+22",
       "date": "2024-10-22"

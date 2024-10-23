@@ -24,9 +24,14 @@ void main(List<String> arguments) {
   final packageGenerator =
       PackageGenerator(inputDir: jsonFile.parent, specJson: specJson);
   packageGenerator.generatePackage(outputDir, CPUArchitecture.x86_64);
+  const packagePathX86_64 = null;
 
+  late final String? packagePathAArch64;
   if (specJson.linuxArmReleaseBundleDirPath != null) {
-    packageGenerator.generatePackage(outputDir, CPUArchitecture.aarch64);
+    packagePathAArch64 =
+        packageGenerator.generatePackage(outputDir, CPUArchitecture.aarch64);
+  } else {
+    packagePathAArch64 = null;
   }
 
   final sha256x64 = packageGenerator.sha256x64;
@@ -37,8 +42,8 @@ void main(List<String> arguments) {
 
   final sha256aarch64 = packageGenerator.sha256aarch64;
 
-  final manifestContent = FlatpakManifestGenerator(specJson)
-      .getFlatpakManifest(sha256x64, sha256aarch64);
+  final manifestContent = FlatpakManifestGenerator(specJson).getFlatpakManifest(
+      sha256x64, sha256aarch64, packagePathX86_64, packagePathAArch64);
   final manifestPath = '${outputDir.path}/${specJson.appId}.json';
   final manifestFile = File(manifestPath);
   manifestFile.writeAsStringSync(manifestContent);
@@ -63,7 +68,7 @@ class PackageGenerator {
 
   PackageGenerator({required this.inputDir, required this.specJson});
 
-  void generatePackage(Directory outputDir, CPUArchitecture platform) {
+  String generatePackage(Directory outputDir, CPUArchitecture platform) {
     final tempDir = outputDir.createTempSync('flutter_generator_temp');
     final appId = specJson.appId;
 
@@ -136,6 +141,7 @@ class PackageGenerator {
     }
 
     tempDir.deleteSync(recursive: true);
+    return packagePath;
   }
 }
 
@@ -166,7 +172,13 @@ class FlatpakManifestGenerator {
 
   FlatpakManifestGenerator(this.specJson);
 
-  String getFlatpakManifest(String sha256x64, String? sha256aarch64) {
+  String getReleaseVersion() {
+    return String.fromEnvironment("FLUTTER_APP_RELEASE_VERSION",
+        defaultValue: specJson.releases.first.version);
+  }
+
+  String getFlatpakManifest(String sha256x64, String? sha256aarch64,
+      String? packagePathX86_64, String? packagePathAArch64) {
     final appName = specJson.lowercaseAppName;
     final appId = specJson.appId;
     const encoder = JsonEncoder.withIndent('     ');
@@ -200,8 +212,10 @@ class FlatpakManifestGenerator {
             {
               'type': 'archive',
               'only-arches': ['x86_64'],
-              'url':
-                  'https://github.com/${specJson.githubReleaseOrganization}/${specJson.githubReleaseProject}/releases/download/${specJson.releases.first.version}/${specJson.lowercaseAppName}-linux-x86_64.tar.gz',
+              'url': (packagePathX86_64 != null
+                      ? 'file://$packagePathX86_64'
+                      : null) ??
+                  'https://github.com/${specJson.githubReleaseOrganization}/${specJson.githubReleaseProject}/releases/download/${getReleaseVersion()}/${specJson.lowercaseAppName}-linux-x86_64.tar.gz',
               'sha256': sha256x64,
               'dest': specJson.lowercaseAppName
             },
@@ -209,7 +223,9 @@ class FlatpakManifestGenerator {
               {
                 'type': 'archive',
                 'only-arches': ['aarch64'],
-                'url':
+                'url': (packagePathAArch64 != null
+                        ? 'file://$packagePathAArch64'
+                        : null) ??
                     'https://github.com/${specJson.githubReleaseOrganization}/${specJson.githubReleaseProject}/releases/download/${specJson.releases.first.version}/${specJson.lowercaseAppName}-linux-aarch64.tar.gz',
                 'sha256': sha256aarch64,
                 'dest': specJson.lowercaseAppName
