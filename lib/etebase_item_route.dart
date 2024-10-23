@@ -1057,7 +1057,8 @@ END:VALARM"""*/
                             VComponent.parse(utf8.decode(updatedItemContent))
                                 as VCalendar;
                         final sendingToNavigator = {
-                          "item": itemUpdatedFromServer,
+                          "item": await widget.itemManager
+                              .cacheSaveWithContent(itemUpdatedFromServer),
                           "icalendar": itemUpdatedFromServer,
                           "itemContent": updatedItemContent,
                           "itemIsDeleted":

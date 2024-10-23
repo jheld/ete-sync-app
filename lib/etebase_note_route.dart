@@ -113,7 +113,8 @@ class _EtebaseItemNoteCreateRouteState
                               await itemUpdatedFromServer.getContent();
 
                           final sendingToNavigator = {
-                            "item": itemUpdatedFromServer,
+                            "item": await widget.itemManager
+                                .cacheSaveWithContent(itemUpdatedFromServer),
                             "itemContent": updatedItemContent,
                             "itemIsDeleted":
                                 await itemUpdatedFromServer.isDeleted(),
