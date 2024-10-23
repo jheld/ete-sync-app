@@ -1,0 +1,31 @@
+{
+  "appId": "com.ete_sync_app.ete_sync_app",
+  "releases": [
+    {
+      "version": "1.0.19+22",
+      "date": "2024-10-22"
+    }
+  ],
+  "lowercaseAppName": "etesyncapp",
+  "runtimeVersion": "22.08",
+  "linuxReleaseBundleDirPath": "../build/linux/x64/release/bundle",
+  "appDataPath": "com.ete_sync_app.ete_sync_app.appdata.xml",
+  "desktopPath": "com.ete_sync_app.ete_sync_app.desktop",
+  "icons": {
+    "symbolic": "icons/com.ete_sync_app.ete_sync_app-symbolic.svg",
+    "512x512": "icons/512x512/com.ete_sync_app.ete_sync_app.png"
+  },
+  "buildCommandsAfterUnpack": [
+    "ln -s /usr/lib/x86_64-linux-gnu/libsqlite3.so.0 /app/lib/libsqlite3.so"
+  ],
+  "finishArgs": [
+    "--share=ipc",
+    "--share=network",
+    "--socket=fallback-x11",
+    "--socket=wayland",
+    "--device=dri",
+    "--talk-name=org.freedesktop.secrets"
+  ],
+  "githubReleaseOrganization": "jheld",
+  "githubReleaseProject": "ete-sync-app"
+}

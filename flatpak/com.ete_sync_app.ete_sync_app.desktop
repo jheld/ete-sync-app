@@ -1,0 +1,8 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Ete Sync App
+Comment=EteSync Tasks App
+Categories=Calendar;
+Icon=com.ete_sync_app.ete_sync_app
+Exec=etesyncapp
