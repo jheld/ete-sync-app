@@ -673,8 +673,24 @@ END:VALARM""";
             final item = await widget.itemManager.create(
                 EtebaseItemMetadata(mtime: DateTime.now()),
                 utf8.encode(todoComp.parent!.toString()));
-
-            await widget.itemManager.transaction([item]);
+            var retries = 0;
+            var succeeded = false;
+            while (!succeeded && retries < 5) {
+              try {
+                await widget.itemManager.transaction([item]);
+                succeeded = true;
+              } on EtebaseException catch (e) {
+                if (e.code == EtebaseErrorCode.generic) {
+                  retries += 1;
+                }
+                if (retries >= 5 || e.code != EtebaseErrorCode.generic) {
+                  rethrow;
+                }
+              }
+            }
+            if (!succeeded && retries >= 5) {
+              throw Exception("Failed all retries on the item transaction");
+            }
 
             final itemUpdatedFromServer =
                 await widget.itemManager.fetch((await item.getUid()));

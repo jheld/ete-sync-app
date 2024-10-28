@@ -36,6 +36,16 @@ lib/*.dart~
 .\#*
 etesyncapp_*.snap
 
+# Flatpak
+flatpak/flatpak_generator\ exports/com.ete_sync_app.ete_sync_app.json
+flatpak/flatpak_generator\ exports/etesyncapp-*.tar.gz
+flatpak/flatpak_generator\ exports/flutter_generator_temp*
+flatpak/flatpak_generator\ exports/.flatpak-builder
+flatpak/flatpak_generator\ exports/repo
+flatpak/.flatpak-builder
+
+
+
 # Symbolication related
 app.*.symbols
 
