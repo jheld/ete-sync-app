@@ -2246,7 +2246,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
         VComponent.parse(utf8.decode(await eteItemFromServer.getContent()))
             as VCalendar;
     return {
-      "item": eteItemFromServer,
+      "item": await itemManager.cacheSaveWithContent(eteItemFromServer),
       "itemSentToServer": itemClone,
       "icalendar": icalendarUpdated,
       "itemContent": (await eteItemFromServer.getContent()),
