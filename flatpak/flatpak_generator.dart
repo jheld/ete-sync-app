@@ -178,7 +178,8 @@ class FlatpakManifestGenerator {
   }
 
   String getFlatpakManifest(String sha256x64, String? sha256aarch64,
-      String? packagePathX86_64, String? packagePathAArch64) {
+      String? packagePathX86_64, String? packagePathAArch64,
+      {bool installAppDataXML = true}) {
     final appName = specJson.lowercaseAppName;
     final appId = specJson.appId;
     const encoder = JsonEncoder.withIndent('     ');
@@ -206,7 +207,8 @@ class FlatpakManifestGenerator {
             ...specJson.icons.map((icon) =>
                 'install -Dm644 $appName/icons/${icon.type}/${icon.getFilename(appId)} /app/share/icons/hicolor/${icon.type}/apps/${icon.getFilename(appId)}'),
             'install -Dm644 $appName/$appId.desktop /app/share/applications/$appId.desktop',
-            'install -Dm644 $appName/$appId.appdata.xml /app/share/applications/$appId.appdata.xml'
+            if (installAppDataXML)
+              'install -Dm644 $appName/$appId.appdata.xml /app/share/applications/$appId.appdata.xml'
           ],
           'sources': [
             {

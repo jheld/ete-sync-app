@@ -408,25 +408,25 @@ Future<ItemListResponse> getItemListResponse(
       Directory("$cacheDir/$username/cols/$collUid/items").listSync().toList();
 
   theMap["items"] = <Uint8List, Map<String, dynamic>>{};
-  for (var cachedItemUID in itemsAtCollPath.map((e) => e.path)) {
-    final item = await cacheClient.itemGet(itemManager, collUid, cachedItemUID);
-    final itemByteBuffer = await itemManager.cacheSaveWithContent(item);
-    theMap["items"][itemByteBuffer] = {
-      "itemIsDeleted": await item.isDeleted(),
-      "itemUid": await item.getUid(),
-      "itemContent": await item.getContent(),
-      "itemType": (await item.getMeta()).itemType,
-      "itemName": (await item.getMeta()).name,
-      "mtime": (await item.getMeta()).mtime,
-    };
-  }
+  // for (var cachedItemUID in itemsAtCollPath.map((e) => e.path)) {
+  //   final item = await cacheClient.itemGet(itemManager, collUid, cachedItemUID);
+  //   final itemByteBuffer = await itemManager.cacheSaveWithContent(item);
+  //   theMap["items"][itemByteBuffer] = {
+  //     "itemIsDeleted": await item.isDeleted(),
+  //     "itemUid": await item.getUid(),
+  //     "itemContent": await item.getContent(),
+  //     "itemType": (await item.getMeta()).itemType,
+  //     "itemName": (await item.getMeta()).name,
+  //     "mtime": (await item.getMeta()).mtime,
+  //   };
+  // }
   //final itemsToPutInCache = [];
   while (!done && !cacheOnly) {
     bool loopAgainSpecial = false;
     try {
       final EtebaseItemListResponse rawItemList = await itemManager.list(
           EtebaseFetchOptions(
-              stoken: theMap["items"].isNotEmpty ? stoken : null, limit: 50));
+              stoken: itemsAtCollPath.isNotEmpty ? stoken : null, limit: 50));
 
       List<EtebaseItem> itemList = await (rawItemList).getData();
       stoken = await rawItemList.getStoken();
@@ -452,7 +452,7 @@ Future<ItemListResponse> getItemListResponse(
           "itemName": (await item.getMeta()).name,
           "mtime": (await item.getMeta()).mtime,
         };
-        theMap["items"][itemByteBuffer] = theItemListItemAsMap;
+        //theMap["items"][itemByteBuffer] = theItemListItemAsMap;
         changesSince[itemByteBuffer] =
             ItemListItem.fromMap(theItemListItemAsMap);
       }

@@ -1,24 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-	<id>com.enjoyingfoss.feeel</id>
-	<name>Feeel</name>
-	<summary>A simple home workout/exercise app that respects your privacy</summary>
+	<id>com.ete_sync_app.ete_sync_app</id>
+	<name>etesyncapp</name>
+	<summary>EteSync Tasks App</summary>
 
 	<metadata_license>CC0-1.0</metadata_license>
-	<project_license>AGPL-3.0-or-later</project_license>
 	<recommends>
 		<control>touch</control>
 		<control>pointing</control>
 		<control>keyboard</control>
 	</recommends>
-	<developer_name>Enjoying FOSS</developer_name>
-	<url type="homepage">https://gitlab.com/enjoyingfoss/feeel</url>
-	<url type="bugtracker">https://gitlab.com/enjoyingfoss/feeel/-/issues</url>
-	<url type="donation">https://liberapay.com/Feeel/donate</url>
+	<developer_name>jheld</developer_name>
+	<url type="homepage">https://gitlab.com/jheld/ete-sync-app</url>
+	<url type="bugtracker">https://gitlab.com/jheld/ete-sync-app/-/issues</url>
 
 	<custom>
-		<value key="Purism::form_factor">workstation</value>
-		<value key="Purism::form_factor">mobile</value>
+	  <value key="Purism::form_factor">workstation</value>
 	</custom>
 
 	<branding>
@@ -27,49 +24,20 @@
 	</branding>
 
 	<description>
-		<p>Feeel is an open-source app for doing simple at-home exercises. It holds the acclaimed full body scientific 7-minute workout regime and allows creating custom workouts as well. The app sources exercises from wger, a free and open-source online exercise wiki.</p>
+		<p>EteSync Tasks App</p>
 
 		<p>Features:</p>
 		<ul>
-			<li>Mobile first, runs on Linux and Android</li>
-			<li>Private (fully offline, no tracking, no ads)</li>
+			<li>Built on EteSync and Etebase APIs</li>
 			<li>Translated into several languages</li>
-			<li>Free and open-source. Contribute at https://gitlab.com/enjoyingfoss/feeel/wikis.</li>
+			<li>Free and open-source. Contribute at https://gitlab.com/jheld/ete-sync-app/.</li>
 		</ul>
 	</description>
 
-	<screenshots>
-		<screenshot type="default">
-			<caption>Overview screen in Feeel, listing all workouts</caption>
-			<image type="source">https://gitlab.com/enjoyingfoss/feeel/-/raw/master/flatpak/screenshots/1-intro.png</image>
-		</screenshot>
-		<screenshot type="default">
-			<caption>Feeel's exercise screen, showing a workout in progress</caption>
-			<image type="source">https://gitlab.com/enjoyingfoss/feeel/-/raw/master/flatpak/screenshots/2-exercise.png</image>
-		</screenshot>
-		<screenshot type="default">
-			<caption>A bottom sheet describing an exercise</caption>
-			<image type="source">https://gitlab.com/enjoyingfoss/feeel/-/raw/master/flatpak/screenshots/3-exercise-info.png</image>
-		</screenshot>
-		<screenshot type="default">
-			<caption>The workout editor, allowing people to create their own workouts</caption>
-			<image type="source">https://gitlab.com/enjoyingfoss/feeel/-/raw/master/flatpak/screenshots/4-editor-empty.png</image>
-		</screenshot>
-		<screenshot type="default">
-			<caption>The screen for adding exercises to a workout</caption>
-			<image type="source">https://gitlab.com/enjoyingfoss/feeel/-/raw/master/flatpak/screenshots/5-add-exercises.png</image>
-		</screenshot>
-		<screenshot type="default">
-			<caption>A workout being edited in the workout editor</caption>
-			<image type="source">https://gitlab.com/enjoyingfoss/feeel/-/raw/master/flatpak/screenshots/6-editor.png</image>
-		</screenshot>
-	</screenshots>
+
 
 	<releases>
-		<release version="2.4.1" date="2022-11-22" />
+		<release version="1.0.22+25" date="2024-11-05" />
 	</releases>
-
-	<content_rating type="oars-1.1" />
-
-	<launchable type="desktop-id">com.enjoyingfoss.feeel.desktop</launchable>
+	<launchable type="desktop-id">com.ete_sync_app.ete_sync_app.desktop</launchable>
 </component>
