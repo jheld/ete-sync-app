@@ -2022,6 +2022,16 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       );
       children.add(child);
     }
+    if (children.length == 1) {
+      if (lastInPast != null) {
+        children.add(Text.rich(TextSpan(children: [
+          TextSpan(text: AppLocalizations.of(context)!.later),
+          const WidgetSpan(child: Icon(Icons.upcoming, size: 18))
+        ])));
+        lastInPast = null;
+      }
+    }
+
     return children;
   }
 
