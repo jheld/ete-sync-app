@@ -317,6 +317,10 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       setState(() {
         today = now;
       });
+    } else if (now.hour != today.hour || now.minute != today.minute) {
+      setState(() {
+        today = now;
+      });
     }
   }
 
@@ -397,6 +401,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     });
     refreshTimer = Timer.periodic(timerRefreshDuration, (timer) {
       setState(() {
+        today = DateTime.now();
         _itemListResponse = getItemListResponse(
             widget.itemManager, widget.client, widget.colUid,
             cacheOnly: !cacheLoaded, db: widget.db);
@@ -482,6 +487,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                         refreshTimer =
                             Timer.periodic(timerRefreshDuration, (timer) {
                           setState(() {
+                            today = DateTime.now();
                             _itemListResponse = getItemListResponse(
                                 widget.itemManager,
                                 widget.client,
@@ -506,6 +512,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                       refreshTimer =
                           Timer.periodic(timerRefreshDuration, (timer) {
                         setState(() {
+                          today = DateTime.now();
                           _itemListResponse = getItemListResponse(
                               widget.itemManager, widget.client, widget.colUid,
                               db: widget.db);
@@ -1401,6 +1408,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                 client: client)));
     refreshTimer = Timer.periodic(timerRefreshDuration, (timer) {
       setState(() {
+        today = DateTime.now();
         _itemListResponse = getItemListResponse(
             widget.itemManager, widget.client, widget.colUid,
             db: widget.db);
@@ -1433,6 +1441,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                 client: client)));
     refreshTimer = Timer.periodic(timerRefreshDuration, (timer) {
       setState(() {
+        today = DateTime.now();
         _itemListResponse = getItemListResponse(
             widget.itemManager, widget.client, widget.colUid,
             db: widget.db);
