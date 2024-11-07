@@ -1658,6 +1658,9 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     }
     // itemListResponse.items.removeWhere((key, value) =>
     //     itemsFilteredAndSorted.where((test) => test.item == key).isEmpty);
+
+    var lastInPast;
+    var firstInFuture;
     for (final item in itemsFilteredAndSorted) {
       final eteItem = item.item;
 
@@ -1730,6 +1733,27 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
               ? TextDirection.rtl
               : TextDirection.ltr;
 
+      if ((dateForLogicDue ?? dateForLogicStart) != null && todaySearch) {
+        if ((dateForLogicDue ?? dateForLogicStart)!
+            .toLocal()
+            .isBefore(today.toLocal())) {
+          lastInPast = (dateForLogicDue ?? dateForLogicStart)!;
+        } else if (lastInPast != null) {
+          children.add(Text.rich(TextSpan(children: [
+            TextSpan(text: AppLocalizations.of(context)!.later),
+            const WidgetSpan(child: Icon(Icons.upcoming, size: 18))
+          ])));
+          firstInFuture = (dateForLogicDue ?? dateForLogicStart)!;
+          lastInPast = null;
+        } else if (firstInFuture == null) {
+          firstInFuture = (dateForLogicDue ?? dateForLogicStart)!;
+
+          children.add(Text.rich(TextSpan(children: [
+            TextSpan(text: AppLocalizations.of(context)!.later),
+            const WidgetSpan(child: Icon(Icons.upcoming, size: 18))
+          ])));
+        }
+      }
       final child = ListTile(
         leading: Text(
           dateForLogicDue != null

@@ -21,6 +21,7 @@
     "createNewNote": "Create new note",
     "search": "Search",
     "filters": "Filters",
+    "later": "Later",
     "priority": "Priority",
     "alarmTriggerNone": "None",
     "alarmTriggerStart": "When started",
