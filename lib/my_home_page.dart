@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:collection/collection.dart';
 import 'package:enough_icalendar/enough_icalendar.dart';
 import 'package:ete_sync_app/etebase_item_model.dart';
 
@@ -1668,21 +1669,22 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     // itemListResponse.items.removeWhere((key, value) =>
     //     itemsFilteredAndSorted.where((test) => test.item == key).isEmpty);
 
-    var lastInPast;
-    var firstInFuture;
-    for (final item in itemsFilteredAndSorted) {
-      final eteItem = item.item;
-
+    DateTime? lastInPast;
+    DateTime? firstInFuture;
+    if (!todaySearch) {
+      lastInPast = null;
+      firstInFuture = null;
+    }
+    for (final item in itemsFilteredAndSorted.toList()) {
       VCalendar? icalendar;
       icalendar = item.icalendar;
 
       final compTodo = icalendar.todo!;
 
-      final statusTodo = compTodo.status;
-
       if (_searchText != null &&
           !(compTodo.summary?.toLowerCase() ?? "")
               .contains(_searchText!.toLowerCase())) {
+        itemsFilteredAndSorted.remove(item);
         continue;
       }
       DateTime? dateForLogicStart = compTodo.start;
@@ -1695,29 +1697,14 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
         dateForLogicStart =
             itemsByUID[compTodo.relatedTo!]!.icalendar.todo!.start;
         dateForLogicDue = itemsByUID[compTodo.relatedTo!]!.icalendar.todo!.due;
-
-        // final theIterFromMap = itemsSorted
-        //     .where(
-        //         (element) => element.icalendar.todo!.uid == compTodo.relatedTo)
-        //     .toList();
-        // if (theIterFromMap.isNotEmpty) {
-        //   final icalendarRelated = theIterFromMap[0].icalendar;
-        //   dateForLogicStart = icalendarRelated.todo!.start;
-
-        //   dateForLogicDue = icalendarRelated.todo!.due;
-        // }
       }
 
       final snoozeTimeText =
           compTodo.getProperty("X-MOZ-SNOOZE-TIME")?.textValue;
-      bool isSnoozed = false;
       DateTime? snoozeTime;
       if (snoozeTimeText != null &&
           (dateForLogicStart != null || dateForLogicDue != null)) {
         snoozeTime = DateTime.parse(snoozeTimeText);
-        if (snoozeTime.isAfter(dateForLogicStart ?? dateForLogicDue!)) {
-          isSnoozed = true;
-        }
       }
 
       if ((todaySearch || dateSearchEnd != null) &&
@@ -1728,301 +1715,356 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                   .compareTo((todaySearch ? dtToday : dateSearchEnd!)) ==
               1 &&
           _searchTextController.text.isEmpty) {
+        itemsFilteredAndSorted.remove(item);
         continue;
       }
+    }
+    for (final itemKeyAndGroup
+        in groupBy(itemsFilteredAndSorted, (elementToPredicate) {
+      final item = elementToPredicate;
 
-      final actionColor = switch (compTodo.priority) {
-        Priority.low => Colors.blue,
-        Priority.undefined || null => Colors.grey,
-        Priority.medium => Colors.orange,
-        Priority.high => Colors.red,
-      };
-      final textDirection =
-          intl.Bidi.detectRtlDirectionality(compTodo.summary ?? "")
-              ? TextDirection.rtl
-              : TextDirection.ltr;
+      VCalendar? icalendar;
+      icalendar = item.icalendar;
+
+      final compTodo = icalendar.todo!;
+
+      DateTime? dateForLogicStart = compTodo.start;
+      DateTime? dateForLogicDue = compTodo.due;
+      if (compTodo.relatedTo != null &&
+          compTodo.relatedTo!.isNotEmpty &&
+          compTodo.start == null &&
+          compTodo.due == null) {
+        dateForLogicStart =
+            itemsByUID[compTodo.relatedTo!]!.icalendar.todo!.start;
+        dateForLogicDue = itemsByUID[compTodo.relatedTo!]!.icalendar.todo!.due;
+      }
 
       if ((dateForLogicDue ?? dateForLogicStart) != null && todaySearch) {
-        if ((dateForLogicDue ?? dateForLogicStart)!
-            .toLocal()
-            .isBefore(today.toLocal())) {
-          lastInPast = (dateForLogicDue ?? dateForLogicStart)!;
-        } else if (lastInPast != null) {
-          children.add(Text.rich(TextSpan(children: [
-            TextSpan(text: AppLocalizations.of(context)!.later),
-            const WidgetSpan(child: Icon(Icons.upcoming, size: 18))
-          ])));
-          firstInFuture = (dateForLogicDue ?? dateForLogicStart)!;
-          lastInPast = null;
-        } else if (firstInFuture == null) {
-          firstInFuture = (dateForLogicDue ?? dateForLogicStart)!;
-
-          children.add(Text.rich(TextSpan(children: [
-            TextSpan(text: AppLocalizations.of(context)!.later),
-            const WidgetSpan(child: Icon(Icons.upcoming, size: 18))
-          ])));
-        }
+        return (dateForLogicDue ?? dateForLogicStart)!
+                .toLocal()
+                .isBefore(today.toLocal())
+            ? 0
+            : 1;
+      } else {
+        return 0;
       }
-      final child = ListTile(
-        leading: Text(
-          dateForLogicDue != null
-              ? (intl.DateFormat(intl.DateFormat.HOUR24_MINUTE)
-                      .format(dateForLogicDue.toLocal()) +
-                  (DateUtils.isSameDay(dateForLogicDue.toLocal(),
-                          today.subtract(const Duration(days: 1)))
-                      ? " ${AppLocalizations.of(context)!.yesterday}"
-                      : (DateUtils.isSameDay(dateForLogicDue.toLocal(),
-                              today.add(const Duration(days: 1)))
-                          ? " ${AppLocalizations.of(context)!.tomorrow}"
-                          : (dateForLogicDue
-                                  .isAfter(today.add(const Duration(days: 1)))
-                              ? " @ ${intl.DateFormat("yyyy/MM/dd").format(dateForLogicDue.toLocal())}"
-                              : ""))))
-              : "",
-          style: TextStyle(
-              color: dateForLogicDue != null &&
-                      DateTime.now().compareTo(dateForLogicDue) > 0
-                  ? const ColorScheme.light().error
-                  : null),
-        ),
-        title: Column(
-            crossAxisAlignment: textDirection == TextDirection.rtl
-                ? CrossAxisAlignment.end
-                : CrossAxisAlignment.start,
-            children: [
-              Directionality(
-                  textDirection:
-                      intl.Bidi.detectRtlDirectionality(compTodo.summary ?? "")
-                          ? TextDirection.rtl
-                          : TextDirection.ltr,
-                  child: Text(compTodo.summary ?? "")),
-              if (compTodo.description != null &&
-                  compTodo.description!.isNotEmpty)
+    }).entries) {
+      final items = itemKeyAndGroup.value;
+      if (itemKeyAndGroup.key == 1 && todaySearch) {
+        children.add(Text.rich(TextSpan(children: [
+          TextSpan(text: AppLocalizations.of(context)!.later),
+          const WidgetSpan(child: Icon(Icons.upcoming, size: 18))
+        ])));
+      }
+      for (final item in items) {
+        final eteItem = item.item;
+
+        VCalendar? icalendar;
+        icalendar = item.icalendar;
+
+        final compTodo = icalendar.todo!;
+
+        final statusTodo = compTodo.status;
+
+        DateTime? dateForLogicStart = compTodo.start;
+        DateTime? dateForLogicDue = compTodo.due;
+        if (compTodo.relatedTo != null &&
+            compTodo.relatedTo!.isNotEmpty &&
+            compTodo.start == null &&
+            compTodo.due == null) {
+          dateForLogicStart =
+              itemsByUID[compTodo.relatedTo!]!.icalendar.todo!.start;
+          dateForLogicDue =
+              itemsByUID[compTodo.relatedTo!]!.icalendar.todo!.due;
+        }
+
+        final snoozeTimeText =
+            compTodo.getProperty("X-MOZ-SNOOZE-TIME")?.textValue;
+        bool isSnoozed = false;
+        DateTime? snoozeTime;
+        if (snoozeTimeText != null &&
+            (dateForLogicStart != null || dateForLogicDue != null)) {
+          snoozeTime = DateTime.parse(snoozeTimeText);
+          if (snoozeTime.isAfter(dateForLogicStart ?? dateForLogicDue!)) {
+            isSnoozed = true;
+          }
+        }
+
+        final actionColor = switch (compTodo.priority) {
+          Priority.low => Colors.blue,
+          Priority.undefined || null => Colors.grey,
+          Priority.medium => Colors.orange,
+          Priority.high => Colors.red,
+        };
+        final textDirection =
+            intl.Bidi.detectRtlDirectionality(compTodo.summary ?? "")
+                ? TextDirection.rtl
+                : TextDirection.ltr;
+
+        final child = ListTile(
+          leading: Text(
+            dateForLogicDue != null
+                ? (intl.DateFormat(intl.DateFormat.HOUR24_MINUTE)
+                        .format(dateForLogicDue.toLocal()) +
+                    (DateUtils.isSameDay(dateForLogicDue.toLocal(),
+                            today.subtract(const Duration(days: 1)))
+                        ? " ${AppLocalizations.of(context)!.yesterday}"
+                        : (DateUtils.isSameDay(dateForLogicDue.toLocal(),
+                                today.add(const Duration(days: 1)))
+                            ? " ${AppLocalizations.of(context)!.tomorrow}"
+                            : (dateForLogicDue
+                                    .isAfter(today.add(const Duration(days: 1)))
+                                ? " @ ${intl.DateFormat("yyyy/MM/dd").format(dateForLogicDue.toLocal())}"
+                                : ""))))
+                : "",
+            style: TextStyle(
+                color: dateForLogicDue != null &&
+                        DateTime.now().compareTo(dateForLogicDue) > 0
+                    ? const ColorScheme.light().error
+                    : null),
+          ),
+          title: Column(
+              crossAxisAlignment: textDirection == TextDirection.rtl
+                  ? CrossAxisAlignment.end
+                  : CrossAxisAlignment.start,
+              children: [
                 Directionality(
                     textDirection: intl.Bidi.detectRtlDirectionality(
-                            compTodo.description ?? "")
+                            compTodo.summary ?? "")
                         ? TextDirection.rtl
                         : TextDirection.ltr,
-                    child: Text(compTodo.description ?? "")),
-            ]),
-        selected: _selectedTasks.containsKey(item.value["itemUid"]),
-        selectedTileColor: Colors.grey[100],
-        subtitle: Row(
-            mainAxisAlignment: textDirection == TextDirection.ltr
-                ? MainAxisAlignment.end
-                : MainAxisAlignment.start,
-            children: <Widget>[
-              Row(
-                children: [
-                  if (dateForLogicStart != null &&
-                      (dateForLogicStart.isAfter(today) ||
-                          (dateForLogicStart.day < today.day)))
-                    Chip(
-                      label: RichText(
-                        text: TextSpan(children: [
-                          TextSpan(
-                              text: ((DateUtils.isSameDay(
-                                          dateForLogicStart, today) ||
-                                      DateUtils.isSameDay(
-                                          dateForLogicStart,
-                                          today.subtract(
-                                              const Duration(days: 1))))
-                                  ? (intl.DateFormat.Hm())
-                                      .format(dateForLogicStart.toLocal())
-                                  : intl.DateFormat("yyyy-MM-dd")
-                                      .format(dateForLogicStart.toLocal())),
-                              style: const TextStyle(color: Colors.black87)),
-                          const WidgetSpan(
-                              child: Icon(
-                                Icons.content_paste_go,
-                                color: Colors.black87,
-                              ),
-                              alignment: PlaceholderAlignment.middle)
-                        ]),
-                        textScaler: const TextScaler.linear(0.8),
-                      ),
-                      labelPadding: const EdgeInsets.all(2),
-                    ),
-                  // if (false) dueDateChip(dateForLogicDue),
-                ],
-              ),
-              const VerticalDivider(),
-              Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  mainAxisSize: MainAxisSize.max,
-                  children: (compTodo.categories
-                          ?.map((e) => Chip(
-                                label: Text(
-                                  e,
-                                  textScaler: const TextScaler.linear(0.8),
+                    child: Text(compTodo.summary ?? "")),
+                if (compTodo.description != null &&
+                    compTodo.description!.isNotEmpty)
+                  Directionality(
+                      textDirection: intl.Bidi.detectRtlDirectionality(
+                              compTodo.description ?? "")
+                          ? TextDirection.rtl
+                          : TextDirection.ltr,
+                      child: Text(compTodo.description ?? "")),
+              ]),
+          selected: _selectedTasks.containsKey(item.value["itemUid"]),
+          selectedTileColor: Colors.grey[100],
+          subtitle: Row(
+              mainAxisAlignment: textDirection == TextDirection.ltr
+                  ? MainAxisAlignment.end
+                  : MainAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  children: [
+                    if (dateForLogicStart != null &&
+                        (dateForLogicStart.isAfter(today) ||
+                            (dateForLogicStart.day < today.day)))
+                      Chip(
+                        label: RichText(
+                          text: TextSpan(children: [
+                            TextSpan(
+                                text: ((DateUtils.isSameDay(
+                                            dateForLogicStart, today) ||
+                                        DateUtils.isSameDay(
+                                            dateForLogicStart,
+                                            today.subtract(
+                                                const Duration(days: 1))))
+                                    ? (intl.DateFormat.Hm())
+                                        .format(dateForLogicStart.toLocal())
+                                    : intl.DateFormat("yyyy-MM-dd")
+                                        .format(dateForLogicStart.toLocal())),
+                                style: const TextStyle(color: Colors.black87)),
+                            const WidgetSpan(
+                                child: Icon(
+                                  Icons.content_paste_go,
+                                  color: Colors.black87,
                                 ),
-                                visualDensity: VisualDensity.compact,
-                                labelPadding: const EdgeInsets.all(2),
-                              ))
-                          .toList() ??
-                      [])),
-              if (isSnoozed)
-                Padding(
-                    padding: const EdgeInsets.only(left: 8),
-                    child: Text(
-                        "snoozed: ${intl.DateFormat("${DateUtils.isSameDay(snoozeTime!.toLocal(), DateTime.now()) ? "" : "yyyy-MM-dd "}HH:mm").format(snoozeTime.toLocal())}",
-                        style: const TextStyle(color: Colors.orange))),
-            ]),
-        trailing: IconButton(
-          icon: Icon(icalendar.todo!.recurrenceRule != null
-              ? Icons.repeat
-              : (statusTodo == TodoStatus.completed
-                  ? Icons.check
-                  : (statusTodo == TodoStatus.cancelled
-                      ? Icons.cancel
-                      : Icons.check_box_outline_blank))),
-          color: actionColor,
-          onPressed: statusTodo == TodoStatus.completed
-              ? null
-              : () async {
-                  try {
-                    await onPressedToggleCompletion(
-                            eteItem, icalendar!, itemManager, compTodo)
-                        .then((value) async {
-                      final cacheClient = await EtebaseFileSystemCache.create(
-                          widget.client,
-                          await getCacheDir(),
-                          await getUsernameInCacheDir());
-                      final colUid = await getCollectionUIDInCacheDir();
-                      await cacheClient.itemSet(itemManager, colUid,
-                          await itemManager.cacheLoad(value["item"]));
-                      await cacheClient.dispose();
-                      itemListResponse.items.remove(eteItem);
-                      itemListResponse.items[value["item"]] =
-                          ItemListItem.fromMap(value);
-                      dbRowsInsert([
-                        MapEntry(value["item"], ItemListItem.fromMap(value))
-                      ], widget.db, widget.colType);
-                      itemListResponse.items.clear();
-                      setState(() {
-                        _itemListResponse =
-                            Future<ItemListResponse>.value(itemListResponse);
-                      });
-                      return value;
-                    });
-                  } on Exception catch (error, stackTrace) {
-                    if (kDebugMode) {
-                      print(stackTrace);
-                      print(error);
-                    }
-
-                    if (error is EtebaseException) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                          content: Text(error.message),
-                          duration: const Duration(seconds: 5),
-                          action: SnackBarAction(
-                            label: 'OK',
-                            onPressed: () async {
-                              ScaffoldMessenger.of(context)
-                                  .hideCurrentSnackBar();
-                            },
-                          ),
-                        ));
-                      }
-                      if (error.code == EtebaseErrorCode.conflict) {
-                        final itemUpdatedFromServer = await itemManager.fetch(
-                            await (await itemManager.cacheLoad(eteItem))
-                                .getUid());
-                        final contentFromServer =
-                            await itemUpdatedFromServer.getContent();
-                        if (kDebugMode) {
-                          print("------BEGIN returned from server ---------");
-                          print(
-                              "ETAG: ${await itemUpdatedFromServer.getEtag()}");
-                          print(
-                              (VComponent.parse(utf8.decode(contentFromServer))
-                                      as VCalendar)
-                                  .toString());
-                          print("------END returned from server ---------");
-                        }
-
+                                alignment: PlaceholderAlignment.middle)
+                          ]),
+                          textScaler: const TextScaler.linear(0.8),
+                        ),
+                        labelPadding: const EdgeInsets.all(2),
+                      ),
+                    // if (false) dueDateChip(dateForLogicDue),
+                  ],
+                ),
+                const VerticalDivider(),
+                Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    mainAxisSize: MainAxisSize.max,
+                    children: (compTodo.categories
+                            ?.map((e) => Chip(
+                                  label: Text(
+                                    e,
+                                    textScaler: const TextScaler.linear(0.8),
+                                  ),
+                                  visualDensity: VisualDensity.compact,
+                                  labelPadding: const EdgeInsets.all(2),
+                                ))
+                            .toList() ??
+                        [])),
+                if (isSnoozed)
+                  Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Text(
+                          "snoozed: ${intl.DateFormat("${DateUtils.isSameDay(snoozeTime!.toLocal(), DateTime.now()) ? "" : "yyyy-MM-dd "}HH:mm").format(snoozeTime.toLocal())}",
+                          style: const TextStyle(color: Colors.orange))),
+              ]),
+          trailing: IconButton(
+            icon: Icon(icalendar.todo!.recurrenceRule != null
+                ? Icons.repeat
+                : (statusTodo == TodoStatus.completed
+                    ? Icons.check
+                    : (statusTodo == TodoStatus.cancelled
+                        ? Icons.cancel
+                        : Icons.check_box_outline_blank))),
+            color: actionColor,
+            onPressed: statusTodo == TodoStatus.completed
+                ? null
+                : () async {
+                    try {
+                      await onPressedToggleCompletion(
+                              eteItem, icalendar!, itemManager, compTodo)
+                          .then((value) async {
                         final cacheClient = await EtebaseFileSystemCache.create(
                             widget.client,
                             await getCacheDir(),
                             await getUsernameInCacheDir());
                         final colUid = await getCollectionUIDInCacheDir();
-                        await cacheClient.itemSet(
-                            itemManager, colUid, itemUpdatedFromServer);
+                        await cacheClient.itemSet(itemManager, colUid,
+                            await itemManager.cacheLoad(value["item"]));
                         await cacheClient.dispose();
-
                         itemListResponse.items.remove(eteItem);
-
-                        itemListResponse.items[await itemManager
-                                .cacheSaveWithContent(itemUpdatedFromServer)] =
-                            ItemListItem.fromMap({
-                          "itemContent": contentFromServer,
-                          "itemUid": await itemUpdatedFromServer.getUid(),
-                          "itemIsDeleted":
-                              await itemUpdatedFromServer.isDeleted(),
-                          "itemType":
-                              (await itemUpdatedFromServer.getMeta()).itemType,
-                          "itemName":
-                              (await itemUpdatedFromServer.getMeta()).name,
-                          "mtime":
-                              (await itemUpdatedFromServer.getMeta()).mtime,
-                        });
+                        itemListResponse.items[value["item"]] =
+                            ItemListItem.fromMap(value);
                         dbRowsInsert([
-                          MapEntry(
-                              await itemManager
-                                  .cacheSaveWithContent(itemUpdatedFromServer),
-                              itemListResponse.items[
-                                  await itemManager.cacheSaveWithContent(
-                                      itemUpdatedFromServer)]!)
+                          MapEntry(value["item"], ItemListItem.fromMap(value))
                         ], widget.db, widget.colType);
                         itemListResponse.items.clear();
                         setState(() {
                           _itemListResponse =
                               Future<ItemListResponse>.value(itemListResponse);
                         });
+                        return value;
+                      });
+                    } on Exception catch (error, stackTrace) {
+                      if (kDebugMode) {
+                        print(stackTrace);
+                        print(error);
+                      }
+
+                      if (error is EtebaseException) {
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Text(error.message),
+                            duration: const Duration(seconds: 5),
+                            action: SnackBarAction(
+                              label: 'OK',
+                              onPressed: () async {
+                                ScaffoldMessenger.of(context)
+                                    .hideCurrentSnackBar();
+                              },
+                            ),
+                          ));
+                        }
+                        if (error.code == EtebaseErrorCode.conflict) {
+                          final itemUpdatedFromServer = await itemManager.fetch(
+                              await (await itemManager.cacheLoad(eteItem))
+                                  .getUid());
+                          final contentFromServer =
+                              await itemUpdatedFromServer.getContent();
+                          if (kDebugMode) {
+                            print("------BEGIN returned from server ---------");
+                            print(
+                                "ETAG: ${await itemUpdatedFromServer.getEtag()}");
+                            print((VComponent.parse(
+                                        utf8.decode(contentFromServer))
+                                    as VCalendar)
+                                .toString());
+                            print("------END returned from server ---------");
+                          }
+
+                          final cacheClient =
+                              await EtebaseFileSystemCache.create(
+                                  widget.client,
+                                  await getCacheDir(),
+                                  await getUsernameInCacheDir());
+                          final colUid = await getCollectionUIDInCacheDir();
+                          await cacheClient.itemSet(
+                              itemManager, colUid, itemUpdatedFromServer);
+                          await cacheClient.dispose();
+
+                          itemListResponse.items.remove(eteItem);
+
+                          itemListResponse.items[
+                                  await itemManager.cacheSaveWithContent(
+                                      itemUpdatedFromServer)] =
+                              ItemListItem.fromMap({
+                            "itemContent": contentFromServer,
+                            "itemUid": await itemUpdatedFromServer.getUid(),
+                            "itemIsDeleted":
+                                await itemUpdatedFromServer.isDeleted(),
+                            "itemType": (await itemUpdatedFromServer.getMeta())
+                                .itemType,
+                            "itemName":
+                                (await itemUpdatedFromServer.getMeta()).name,
+                            "mtime":
+                                (await itemUpdatedFromServer.getMeta()).mtime,
+                          });
+                          dbRowsInsert([
+                            MapEntry(
+                                await itemManager.cacheSaveWithContent(
+                                    itemUpdatedFromServer),
+                                itemListResponse.items[
+                                    await itemManager.cacheSaveWithContent(
+                                        itemUpdatedFromServer)]!)
+                          ], widget.db, widget.colType);
+                          itemListResponse.items.clear();
+                          setState(() {
+                            _itemListResponse = Future<ItemListResponse>.value(
+                                itemListResponse);
+                          });
+                        }
                       }
                     }
-                  }
-                },
-        ),
-        onLongPress: () {
-          setState(() {
-            if (!_selectedTasks.containsKey(item.value["itemUid"])) {
-              _selectedTasks[item.value["itemUid"]] = item;
-              //_anySelectedTasks = true;
-            } else {
-              _selectedTasks.remove(item.value["itemUid"]);
-              if (_selectedTasks.isEmpty) {
-                //_anySelectedTasks = false;
-              }
-            }
-          });
-        },
-        onTap: () => onPressedItemWidget(
-                context, eteItem, icalendar!, itemManager, item.value, client)
-            .then((value) {
-          if (value != null) {
-            itemListResponse.items.remove(eteItem);
-            itemListResponse.items[value["item"]] = ItemListItem.fromMap(value);
-            dbRowsInsert([
-              MapEntry(value["item"], itemListResponse.items[value["item"]]!)
-            ], widget.db, widget.colType);
-            itemListResponse.items.clear();
+                  },
+          ),
+          onLongPress: () {
             setState(() {
-              _itemListResponse =
-                  Future<ItemListResponse>.value(itemListResponse);
+              if (!_selectedTasks.containsKey(item.value["itemUid"])) {
+                _selectedTasks[item.value["itemUid"]] = item;
+                //_anySelectedTasks = true;
+              } else {
+                _selectedTasks.remove(item.value["itemUid"]);
+                if (_selectedTasks.isEmpty) {
+                  //_anySelectedTasks = false;
+                }
+              }
             });
-            //_refreshIndicatorKey.currentState?.show();
-          } else {
-            /*setState(() {
+          },
+          onTap: () => onPressedItemWidget(
+                  context, eteItem, icalendar!, itemManager, item.value, client)
+              .then((value) {
+            if (value != null) {
+              itemListResponse.items.remove(eteItem);
+              itemListResponse.items[value["item"]] =
+                  ItemListItem.fromMap(value);
+              dbRowsInsert([
+                MapEntry(value["item"], itemListResponse.items[value["item"]]!)
+              ], widget.db, widget.colType);
+              itemListResponse.items.clear();
+              setState(() {
+                _itemListResponse =
+                    Future<ItemListResponse>.value(itemListResponse);
+              });
+              //_refreshIndicatorKey.currentState?.show();
+            } else {
+              /*setState(() {
               _itemListResponse = getItemListResponse(itemManager);
             });*/
-          }
-        }),
-      );
-      children.add(child);
+            }
+          }),
+        );
+        children.add(child);
+      }
     }
-    if (children.length == 1) {
+    if (children.length == 1 && todaySearch) {
       if (lastInPast != null) {
         children.add(Text.rich(TextSpan(children: [
           TextSpan(text: AppLocalizations.of(context)!.later),
