@@ -1751,10 +1751,13 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     }).entries) {
       final items = itemKeyAndGroup.value;
       if (itemKeyAndGroup.key == 1 && todaySearch) {
-        children.add(Text.rich(TextSpan(children: [
-          TextSpan(text: AppLocalizations.of(context)!.later),
-          const WidgetSpan(child: Icon(Icons.upcoming, size: 18))
-        ])));
+        children.add(const Divider());
+        children.add(Padding(
+            padding: const EdgeInsets.all(8),
+            child: Text.rich(TextSpan(children: [
+              TextSpan(text: AppLocalizations.of(context)!.later),
+              const WidgetSpan(child: Icon(Icons.upcoming, size: 18))
+            ]))));
       }
       for (final item in items) {
         final eteItem = item.item;
@@ -2066,10 +2069,14 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     }
     if (children.length == 1 && todaySearch) {
       if (lastInPast != null) {
-        children.add(Text.rich(TextSpan(children: [
-          TextSpan(text: AppLocalizations.of(context)!.later),
-          const WidgetSpan(child: Icon(Icons.upcoming, size: 18))
-        ])));
+        children.add(const Divider());
+        children.add(Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Text.rich(TextSpan(children: [
+            TextSpan(text: AppLocalizations.of(context)!.later),
+            const WidgetSpan(child: Icon(Icons.upcoming, size: 18))
+          ])),
+        ));
         lastInPast = null;
       }
     }
