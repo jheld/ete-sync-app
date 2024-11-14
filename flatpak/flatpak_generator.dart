@@ -18,7 +18,7 @@ void main(List<String> arguments) {
   final specJson = SpecJson.fromJson(jsonFile);
 
   final outputDir =
-      Directory('${Directory.current.path}/flatpak_generator exports');
+      Directory('${Directory.current.path}/flatpak_generator_exports');
   outputDir.createSync();
 
   final packageGenerator =

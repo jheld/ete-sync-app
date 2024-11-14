@@ -1,0 +1,8 @@
+generate-artifact:
+	dart --define=FLUTTER_APP_RELEASE_VERSION="$(cider version)" flatpak_generator.dart spec.json
+push-release:
+	gh release create "$(cider version)" --title="$(cider version)" --latest --generate-notes ./flatpak_generator_exports/etesyncapp-linux-x86_64.tar.gz
+install-artifact:
+	cd flatpak_generator_exports && flatpak-builder --force-clean --user --install-deps-from=flathub --repo=repo --install builddir com.ete_sync_app.ete_sync_app.json && cd ..
+generate-and-push: generate-artifact push-release
+generate-and-push-and-install: generate-and-push install-artifact
