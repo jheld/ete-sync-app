@@ -1,3 +1,4 @@
 [submodule "flatpak/flatpak_generator exports/shared-modules"]
 	url = https://github.com/flathub/shared-modules.git
 	active = true
+	path = flatpak/flatpak_generator_exports/shared-modules
