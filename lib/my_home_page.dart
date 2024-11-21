@@ -2293,6 +2293,10 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
         todoComp.start = updatedDueDate;
 
         updatedDueDate = updatedDueDate?.add(const Duration(seconds: 1));
+      } else if (todoComp.start != null &&
+          todoComp.due != null &&
+          todoComp.due!.isAtSameMomentAs(todoComp.start!)) {
+        todoComp.start = updatedDueDate;
       }
 
       todoComp.due = updatedDueDate;
