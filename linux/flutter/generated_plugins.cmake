@@ -3,10 +3,9 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
-  etebase_flutter
   flutter_secure_storage_linux
   screen_retriever_linux
-  sqlite3_flutter_libs
+  sodium_libs
   url_launcher_linux
   window_manager
 )

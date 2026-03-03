@@ -1,34 +1,37 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 import 'package:collection/collection.dart';
 import 'package:enough_icalendar/enough_icalendar.dart';
 import 'package:ete_sync_app/etebase_item_model.dart';
+import 'package:ete_sync_app/util.dart';
 
-import 'package:ete_sync_app/etebase_item_route.dart';
+import 'etebase_item_route.dart';
 import 'package:ete_sync_app/etebase_note_model.dart';
 import 'package:ete_sync_app/etebase_note_route.dart';
 import 'package:ete_sync_app/i_calendar_custom_parser.dart';
+import 'package:ete_sync_app/l10n/app_localizations.dart';
 import 'package:ete_sync_app/licenses.dart';
-import 'package:ete_sync_app/util.dart';
 import 'package:etebase_flutter/etebase_flutter.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:intl/intl.dart' as intl hide TextDirection;
 import 'package:provider/provider.dart';
 import 'package:rrule/rrule.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:sqlite3/sqlite3.dart' hide Row;
+import 'package:sodium/sodium_sumo.dart';
 
 import 'package:window_manager/window_manager.dart';
 
 class AccountLoadPage extends StatefulWidget {
   const AccountLoadPage({super.key, required this.client, this.serverUri});
 
-  final EtebaseClient client;
+  final Client client;
   final Uri? serverUri;
 
   @override
@@ -105,13 +108,19 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
 
   Future<void> loginValidationSubmit(BuildContext context) async {
     if (_formKey.currentState!.validate()) {
+      final sodium = await SodiumSumoInit.init(
+        // replace with wherever libsodium is located on your machine
+        () => DynamicLibrary.open('/usr/lib/x86_64-linux-gnu/libsodium.so'),
+      );
+
       bool encounteredError = false;
-      final client = await EtebaseClient.create(
+      final client = Client.create(
+          sodium,
           "ete_sync_client",
           serverUrlController.text.isNotEmpty
               ? Uri.parse(serverUrlController.text)
               : null);
-      late final EtebaseAccount etebase;
+      late final Account etebase;
       late final String username;
       if (!(await client.checkEtebaseServer())) {
         encounteredError = true;
@@ -126,8 +135,8 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
         //final client = widget.client;
         username = usernameController.text;
         try {
-          etebase = await EtebaseAccount.login(
-              client, username, passwordController.text);
+          etebase =
+              await Account.login(client, username, passwordController.text);
         } on EtebaseException catch (e) {
           if (kDebugMode) {
             print(e);
@@ -143,17 +152,20 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
       if (!encounteredError) {
         final cacheDir = await getCacheDir();
 
-        final cacheClient =
-            await EtebaseFileSystemCache.create(client, cacheDir, username);
+        Cache cacheClient = await Cache.create(client, username);
         const secureStorage = FlutterSecureStorage();
-        final eteCacheAccountEncryptionValue =
-            await EtebaseUtils.randombytes(client, 32);
+        final eteCacheAccountEncryptionValue = client.randombytes(32);
 
         await secureStorage.write(
             key: eteCacheAccountEncryptionKeyString,
             value: base64Encode(eteCacheAccountEncryptionValue));
+        final sodium = await SodiumSumoInit.init(
+          // replace with wherever libsodium is located on your machine
+          () => DynamicLibrary.open('/usr/lib/x86_64-linux-gnu/libsodium.so'),
+        );
 
-        await cacheClient.saveAccount(etebase, eteCacheAccountEncryptionValue);
+        await cacheClient.saveAccount(etebase,
+            SecureKey.fromList(sodium, eteCacheAccountEncryptionValue));
 
         final notesCollectionData = await getCollections(client,
             etebaseAccount: etebase, collectionType: "etebase.md.note");
@@ -183,12 +195,15 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
 
           final collUid = collectionData["itemUid"];
           final colType = collectionData["itemCollectionType"] as String;
-          final collectionManager = await etebase.getCollectionManager();
+          final collectionManager = etebase.collectionManager;
           final collection = await collectionManager.fetch(collUid);
+
+          cacheClient =
+              await Cache.create(widget.client, await getUsernameInCacheDir());
+
           await cacheClient.collectionSet(collectionManager, collection);
 
-          final itemManager =
-              await collectionManager.getItemManager(collection);
+          final itemManager = collectionManager.getItemManager(collection);
           final homePageTitle = (await collection.getMeta()).name;
           final dbFilePathStr = await dbFilePath();
           if (context.mounted) {
@@ -263,8 +278,8 @@ class MyHomePage extends StatefulWidget {
   // always marked "final".
 
   final String title;
-  final EtebaseItemManager itemManager;
-  final EtebaseClient client;
+  final ItemManager itemManager;
+  final Client client;
   final String colUid;
   final String colType;
   final Database db;
@@ -276,7 +291,7 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> with WindowListener {
-  Future<ItemListResponse>? _itemListResponse;
+  Future<UtilItemListResponse>? _itemListResponse;
   String? _searchText;
   DateTime? dateSearchStart;
   DateTime? dateSearchEnd;
@@ -417,10 +432,9 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       ]}) async {
     final Map<String, dynamic> collections = {};
     for (var collectionType in collectionTypes) {
-      for (var collection in (await getCollections(widget.client,
-              collectionType: collectionType))
-          .toMap()
-          .entries) {
+      final fetchedCollections =
+          (await getCollections(widget.client, collectionType: collectionType));
+      for (var collection in fetchedCollections.toMap().entries) {
         if (collection.key == "items" &&
             collections.containsKey(collection.key)) {
           (collections[collection.key] as Map).addAll(collection.value);
@@ -435,10 +449,10 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
   @override
   Widget build(BuildContext context) {
     return Consumer<LocaleModel>(builder: (context, localeModel, child) {
-      return FutureBuilder<ItemListResponse>(
+      return FutureBuilder<UtilItemListResponse>(
           future: _itemListResponse,
           builder: (BuildContext context,
-              AsyncSnapshot<ItemListResponse?> snapshot) {
+              AsyncSnapshot<UtilItemListResponse?> snapshot) {
             List<Widget> children = [];
             return Scaffold(
               drawer:
@@ -465,7 +479,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                                             ? EtebaseItemCreateRoute(
                                                 itemManager: widget.itemManager,
                                                 client: widget.client)
-                                            : EtebaseItemNoteCreateRoute(
+                                            : ItemNoteCreateRoute(
                                                 itemManager: widget.itemManager,
                                                 client: widget.client))))
                             .then((value) {
@@ -480,7 +494,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                             itemListResponse.items.clear();
                             setState(() {
                               _itemListResponse =
-                                  Future<ItemListResponse>.value(
+                                  Future<UtilItemListResponse>.value(
                                       itemListResponse);
                             });
                           }
@@ -572,7 +586,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
   }
 
   Widget buildMainContent(BuildContext context,
-      AsyncSnapshot<ItemListResponse?> snapshot, List<Widget> children) {
+      AsyncSnapshot<UtilItemListResponse?> snapshot, List<Widget> children) {
     if (snapshot.hasData && snapshot.data != null) {
       final itemListResponse = snapshot.data!;
       final itemManager = itemListResponse.itemManager;
@@ -631,19 +645,19 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
   List<Widget> noteItemList(
       Map<Uint8List, ItemListItem> itemMap,
       BuildContext context,
-      EtebaseItemManager itemManager,
-      ItemListResponse itemListResponse) {
+      ItemManager itemManager,
+      UtilItemListResponse itemListResponse) {
     final listColumn = <Widget>[];
     final itemMapEntriesSorted = <MapEntry<Uint8List, ItemListItem>>[];
 
-    late final ItemListResponse itemListResponseFromDB;
+    late final UtilItemListResponse itemListResponseFromDB;
     if (true) {
       const sqlString =
           "select * from etebase_note_model where itemIsDeleted = 0";
       //print(sqlString);
       final resultSet = widget.db.select(sqlString, []);
 
-      itemListResponseFromDB = ItemListResponse(
+      itemListResponseFromDB = UtilItemListResponse(
           itemManager: widget.itemManager,
           username: widget.username,
           cacheDir: widget.cacheDir,
@@ -701,7 +715,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                     ItemListItem.fromMap(value);
                 setState(() {
                   _itemListResponse =
-                      Future<ItemListResponse>.value(itemListResponse);
+                      Future<UtilItemListResponse>.value(itemListResponse);
                 });
                 //_refreshIndicatorKey.currentState?.show();
               } else {
@@ -753,7 +767,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
         ]);
   }
 
-  AppBar buildAppBar(BuildContext context, ItemListResponse itemListResponse) {
+  AppBar buildAppBar(
+      BuildContext context, UtilItemListResponse itemListResponse) {
     return AppBar(
       backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       title: Text(widget.title),
@@ -762,10 +777,9 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
           IconButton(
               onPressed: () async {
                 bool anyWereChanged = false;
-                final cacheClient = await EtebaseFileSystemCache.create(
-                    widget.client,
-                    await getCacheDir(),
-                    await getUsernameInCacheDir());
+
+                final cacheClient = await Cache.create(
+                    widget.client, await getUsernameInCacheDir());
 
                 final colUid = await getCollectionUIDInCacheDir();
                 for (var entry in _selectedTasks.entries.toList()) {
@@ -791,7 +805,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                         }
 
                         await cacheClient.itemSet(itemManager, colUid,
-                            await itemManager.cacheLoad(value["item"]));
+                            itemManager.cacheLoad(value["item"]));
 
                         _selectedTasks.remove(entry.key);
 
@@ -804,7 +818,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                         itemListResponse.items.clear();
                         setState(() {
                           _itemListResponse =
-                              Future<ItemListResponse>.value(itemListResponse);
+                              Future<UtilItemListResponse>.value(
+                                  itemListResponse);
                         });
                         return value;
                       });
@@ -823,7 +838,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                       print(error);
                     }
 
-                    if (error is EtebaseException) {
+                    if (error is Conflict) {
                       if (context.mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                           content: Text(error.message),
@@ -837,17 +852,14 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                           ),
                         ));
                       }
-                      if (error.code == EtebaseErrorCode.conflict) {
-                        final itemUpdatedFromServer = await itemManager.fetch(
-                            await (await itemManager.cacheLoad(eteItem))
-                                .getUid());
+                      if (error is Conflict) {
+                        final itemUpdatedFromServer = await itemManager
+                            .fetch((itemManager.cacheLoad(eteItem)).uid);
                         final contentFromServer =
                             await itemUpdatedFromServer.getContent();
 
-                        final cacheClient = await EtebaseFileSystemCache.create(
-                            widget.client,
-                            await getCacheDir(),
-                            await getUsernameInCacheDir());
+                        final cacheClient = await Cache.create(
+                            widget.client, await getUsernameInCacheDir());
                         final colUid = await getCollectionUIDInCacheDir();
                         await cacheClient.itemSet(
                             itemManager, colUid, itemUpdatedFromServer);
@@ -855,13 +867,12 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
 
                         itemListResponse.items.remove(eteItem);
 
-                        itemListResponse.items[await itemManager
-                                .cacheSaveWithContent(itemUpdatedFromServer)] =
-                            ItemListItem.fromMap({
+                        itemListResponse.items[itemManager.cacheSave(
+                          itemUpdatedFromServer,
+                        )] = ItemListItem.fromMap({
                           "itemContent": contentFromServer,
-                          "itemUid": await itemUpdatedFromServer.getUid(),
-                          "itemIsDeleted":
-                              await itemUpdatedFromServer.isDeleted(),
+                          "itemUid": itemUpdatedFromServer.uid,
+                          "itemIsDeleted": itemUpdatedFromServer.isDeleted,
                           "itemType":
                               (await itemUpdatedFromServer.getMeta()).itemType,
                           "itemName":
@@ -871,13 +882,14 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                         });
                         dbRowsInsert([
                           MapEntry(
-                              await itemManager
-                                  .cacheSaveWithContent(itemUpdatedFromServer),
+                              itemManager.cacheSave(
+                                itemUpdatedFromServer,
+                              ),
                               ItemListItem.fromMap({
                                 "itemContent": contentFromServer,
-                                "itemUid": await itemUpdatedFromServer.getUid(),
+                                "itemUid": itemUpdatedFromServer.uid,
                                 "itemIsDeleted":
-                                    await itemUpdatedFromServer.isDeleted(),
+                                    itemUpdatedFromServer.isDeleted,
                                 "itemType":
                                     (await itemUpdatedFromServer.getMeta())
                                         .itemType,
@@ -891,7 +903,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                         itemListResponse.items.clear();
                         setState(() {
                           _itemListResponse =
-                              Future<ItemListResponse>.value(itemListResponse);
+                              Future<UtilItemListResponse>.value(
+                                  itemListResponse);
                         });
                       }
                     }
@@ -911,10 +924,9 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
           IconButton(
             onPressed: () async {
               bool anyWereChanged = false;
-              final cacheClient = await EtebaseFileSystemCache.create(
-                  widget.client,
-                  await getCacheDir(),
-                  await getUsernameInCacheDir());
+
+              final cacheClient = await Cache.create(
+                  widget.client, await getUsernameInCacheDir());
 
               final colUid = await getCollectionUIDInCacheDir();
               for (var entry in _selectedTasks.entries.toList()) {
@@ -940,7 +952,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                       }
 
                       await cacheClient.itemSet(itemManager, colUid,
-                          await itemManager.cacheLoad(value["item"]));
+                          itemManager.cacheLoad(value["item"]));
 
                       _selectedTasks.remove(entry.key);
 
@@ -953,8 +965,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
 
                       itemListResponse.items.clear();
                       setState(() {
-                        _itemListResponse =
-                            Future<ItemListResponse>.value(itemListResponse);
+                        _itemListResponse = Future<UtilItemListResponse>.value(
+                            itemListResponse);
                       });
                       return value;
                     });
@@ -973,7 +985,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                     print(error);
                   }
 
-                  if (error is EtebaseException) {
+                  if (error is Conflict) {
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                         content: Text(error.message),
@@ -986,17 +998,14 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                         ),
                       ));
                     }
-                    if (error.code == EtebaseErrorCode.conflict) {
-                      final itemUpdatedFromServer = await itemManager.fetch(
-                          await (await itemManager.cacheLoad(eteItem))
-                              .getUid());
+                    if (error is Conflict) {
+                      final itemUpdatedFromServer = await itemManager
+                          .fetch((itemManager.cacheLoad(eteItem)).uid);
                       final contentFromServer =
                           await itemUpdatedFromServer.getContent();
 
-                      final cacheClient = await EtebaseFileSystemCache.create(
-                          widget.client,
-                          await getCacheDir(),
-                          await getUsernameInCacheDir());
+                      final cacheClient = await Cache.create(
+                          widget.client, await getUsernameInCacheDir());
                       final colUid = await getCollectionUIDInCacheDir();
                       await cacheClient.itemSet(
                           itemManager, colUid, itemUpdatedFromServer);
@@ -1004,13 +1013,12 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
 
                       itemListResponse.items.remove(eteItem);
 
-                      itemListResponse.items[await itemManager
-                              .cacheSaveWithContent(itemUpdatedFromServer)] =
-                          ItemListItem.fromMap({
+                      itemListResponse.items[itemManager.cacheSave(
+                        itemUpdatedFromServer,
+                      )] = ItemListItem.fromMap({
                         "itemContent": contentFromServer,
-                        "itemUid": await itemUpdatedFromServer.getUid(),
-                        "itemIsDeleted":
-                            await itemUpdatedFromServer.isDeleted(),
+                        "itemUid": itemUpdatedFromServer.uid,
+                        "itemIsDeleted": itemUpdatedFromServer.isDeleted,
                         "itemType":
                             (await itemUpdatedFromServer.getMeta()).itemType,
                         "itemName":
@@ -1019,13 +1027,11 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                       });
                       dbRowsInsert([
                         MapEntry(
-                            await itemManager
-                                .cacheSaveWithContent(itemUpdatedFromServer),
+                            itemManager.cacheSave(itemUpdatedFromServer),
                             ItemListItem.fromMap({
                               "itemContent": contentFromServer,
-                              "itemUid": await itemUpdatedFromServer.getUid(),
-                              "itemIsDeleted":
-                                  await itemUpdatedFromServer.isDeleted(),
+                              "itemUid": itemUpdatedFromServer.uid,
+                              "itemIsDeleted": itemUpdatedFromServer.isDeleted,
                               "itemType":
                                   (await itemUpdatedFromServer.getMeta())
                                       .itemType,
@@ -1037,8 +1043,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                       ], widget.db, widget.colType);
                       itemListResponse.items.clear();
                       setState(() {
-                        _itemListResponse =
-                            Future<ItemListResponse>.value(itemListResponse);
+                        _itemListResponse = Future<UtilItemListResponse>.value(
+                            itemListResponse);
                       });
                     }
                   }
@@ -1145,13 +1151,16 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                       .then((value) =>
                           value != null ? base64Decode(value) : value)
                   as Uint8List?;
-              final cacheClient = await EtebaseFileSystemCache.create(
-                  widget.client,
-                  await getCacheDir(),
-                  await getUsernameInCacheDir());
 
+              final cacheClient = await Cache.create(
+                  widget.client, await getUsernameInCacheDir());
+              final sodium = await SodiumSumoInit.init(
+                // replace with wherever libsodium is located on your machine
+                () => DynamicLibrary.open(
+                    '/usr/lib/x86_64-linux-gnu/libsodium.so'),
+              );
               final etebase = await cacheClient.loadAccount(
-                  widget.client, eteCacheAccountEncryptionKey);
+                  SecureKey.fromList(sodium, eteCacheAccountEncryptionKey!));
 
               await etebase.logout();
               await cacheClient.clearUser();
@@ -1160,7 +1169,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                 final stmt =
                     widget.db.prepare("drop table if exists $element;");
                 stmt.execute([]);
-                stmt.dispose();
+                stmt.close();
               }
 
               if (context.mounted) {
@@ -1203,7 +1212,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                   if (snapshot.hasData) {
                     final collectionsResponse = snapshot.data!;
                     final items = collectionsResponse["items"]
-                        as Map<EtebaseCollection, Map<String, dynamic>>;
+                        as Map<Collection, Map<String, dynamic>>;
                     final collItems = (items.entries
                         .where((element) => !element.value["itemIsDeleted"])
                         .map((element) => buildDrawerCollectionListTile(
@@ -1212,7 +1221,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                             cacheDir,
                             username,
                             collectionsResponse["collectionManager"]
-                                as EtebaseCollectionManager))
+                                as CollectionManager))
                         .toList());
                     return Column(children: collItems);
                   } else {
@@ -1235,11 +1244,11 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
   }
 
   ListTile buildDrawerCollectionListTile(
-      MapEntry<EtebaseCollection, Map<String, dynamic>> element,
+      MapEntry<Collection, Map<String, dynamic>> element,
       BuildContext context,
       cacheDir,
       username,
-      EtebaseCollectionManager collectionManager) {
+      CollectionManager collectionManager) {
     final itemDataMap = element.value;
 
     final String itemUid = itemDataMap["itemUid"];
@@ -1265,8 +1274,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
 
         final colType = itemDataMap["itemCollectionType"];
         final colUid = itemUid;
-        final itemManager =
-            (await collectionManager.getItemManager(element.key));
+        final itemManager = (collectionManager.getItemManager(element.key));
         final newEteClient = await getEtebaseClient();
         if (context.mounted) {
           Navigator.pushReplacement(
@@ -1306,7 +1314,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
             const Text("Today"),
             Switch(
                 value: todaySearch,
-                activeColor:
+                activeThumbColor:
                     _searchTextController.text.isNotEmpty ? Colors.grey : null,
                 onChanged: (bool newValue) {
                   setState(() {
@@ -1387,14 +1395,14 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       BuildContext context,
       Uint8List byteBuffer,
       VCalendar icalendar,
-      EtebaseItemManager itemManager,
+      ItemManager itemManager,
       Map<String, dynamic> itemMap,
-      EtebaseClient client) async {
+      Client client) async {
     refreshTimer?.cancel();
     if (!context.mounted) {
       return {};
     }
-    final item = await itemManager.cacheLoad(byteBuffer);
+    final item = itemManager.cacheLoad(byteBuffer);
     if (!context.mounted) {
       return {};
     }
@@ -1421,21 +1429,21 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
   Future<Map<String, dynamic>?> onPressedItemNoteWidget(
       BuildContext context,
       Uint8List byteBuffer,
-      EtebaseItemManager itemManager,
+      ItemManager itemManager,
       Map<String, dynamic> itemMap,
-      EtebaseClient client) async {
+      Client client) async {
     refreshTimer?.cancel();
     if (!context.mounted) {
       return {};
     }
-    final item = await itemManager.cacheLoad(byteBuffer);
+    final item = itemManager.cacheLoad(byteBuffer);
     if (!context.mounted) {
       return {};
     }
     final comingBack = await Navigator.push<Map<String, dynamic>?>(
         context,
         MaterialPageRoute(
-            builder: (context) => EtebaseItemNoteRoute(
+            builder: (context) => ItemNoteRoute(
                 item: item,
                 itemManager: itemManager,
                 itemMap: itemMap,
@@ -1451,8 +1459,10 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     return comingBack;
   }
 
-  List<Widget> todoItemList(EtebaseItemManager itemManager,
-      Map<Uint8List, ItemListItem> itemMap, ItemListResponse itemListResponse) {
+  List<Widget> todoItemList(
+      ItemManager itemManager,
+      Map<Uint8List, ItemListItem> itemMap,
+      UtilItemListResponse itemListResponse) {
     final client = widget.client;
     List<Widget> children = [];
     final itemsSorted = <ItemMapWrapper>[];
@@ -1460,7 +1470,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     var dtToday = DateTime.now().copyWith(hour: 23, minute: 59, second: 59);
     // final resultSet = widget.db.select("select * from etebase_item_model");
     // for (var element in resultSet
-    //     .map((row) => EtebaseItemModel.fromMap(row))
+    //     .map((row) => ItemModel.fromMap(row))
     //     .where((test) =>
     //         test.mtime == null ||
     //         (today.subtract(Duration(hours: today.hour, days: 4)))
@@ -1476,8 +1486,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     //       dtToday.millisecondsSinceEpoch
     //     ]);
     // rowsFilteredByDateTime.map((row) =>
-    //     ItemListItem.fromEtebaseItemModel(EtebaseItemModel.fromMap(row))).toList();
-    late final ItemListResponse itemListResponseFromDB;
+    //     ItemListItem.fromItemModel(ItemModel.fromMap(row))).toList();
+    late final UtilItemListResponse itemListResponseFromDB;
     if (true) {
       final dtEpochSeconds = (dtToday.millisecondsSinceEpoch ~/ 1000);
 
@@ -1504,7 +1514,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                   dtEpochSeconds,
                 ]);
 
-      itemListResponseFromDB = ItemListResponse(
+      itemListResponseFromDB = UtilItemListResponse(
           itemManager: widget.itemManager,
           username: widget.username,
           cacheDir: widget.cacheDir,
@@ -1605,8 +1615,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     //
     // resultSet
     //                                                    .map((row) => ItemListItem
-    //                                                        .fromEtebaseItemModel(
-    //                                                            EtebaseItemModel
+    //                                                        .fromItemModel(
+    //                                                            ItemModel
     //                                                                .fromMap(row)))
     //                                                    .toList()
 
@@ -1925,14 +1935,13 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                       await onPressedToggleCompletion(
                               eteItem, icalendar!, itemManager, compTodo)
                           .then((value) async {
-                        final cacheClient = await EtebaseFileSystemCache.create(
-                            widget.client,
-                            await getCacheDir(),
-                            await getUsernameInCacheDir());
+                        final cacheClient = await Cache.create(
+                            widget.client, await getUsernameInCacheDir());
                         final colUid = await getCollectionUIDInCacheDir();
                         await cacheClient.itemSet(itemManager, colUid,
-                            await itemManager.cacheLoad(value["item"]));
+                            itemManager.cacheLoad(value["item"]));
                         await cacheClient.dispose();
+
                         itemListResponse.items.remove(eteItem);
                         itemListResponse.items[value["item"]] =
                             ItemListItem.fromMap(value);
@@ -1942,7 +1951,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                         itemListResponse.items.clear();
                         setState(() {
                           _itemListResponse =
-                              Future<ItemListResponse>.value(itemListResponse);
+                              Future<UtilItemListResponse>.value(
+                                  itemListResponse);
                         });
                         return value;
                       });
@@ -1952,7 +1962,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                         print(error);
                       }
 
-                      if (error is EtebaseException) {
+                      if (error is Conflict) {
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                             content: Text(error.message),
@@ -1966,16 +1976,14 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                             ),
                           ));
                         }
-                        if (error.code == EtebaseErrorCode.conflict) {
-                          final itemUpdatedFromServer = await itemManager.fetch(
-                              await (await itemManager.cacheLoad(eteItem))
-                                  .getUid());
+                        if (true) {
+                          final itemUpdatedFromServer = await itemManager
+                              .fetch((itemManager.cacheLoad(eteItem)).uid);
                           final contentFromServer =
                               await itemUpdatedFromServer.getContent();
                           if (kDebugMode) {
                             print("------BEGIN returned from server ---------");
-                            print(
-                                "ETAG: ${await itemUpdatedFromServer.getEtag()}");
+                            print("ETAG: ${itemUpdatedFromServer.etag}");
                             print((VComponent.parse(
                                         utf8.decode(contentFromServer))
                                     as VCalendar)
@@ -1983,11 +1991,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                             print("------END returned from server ---------");
                           }
 
-                          final cacheClient =
-                              await EtebaseFileSystemCache.create(
-                                  widget.client,
-                                  await getCacheDir(),
-                                  await getUsernameInCacheDir());
+                          final cacheClient = await Cache.create(
+                              widget.client, await getUsernameInCacheDir());
                           final colUid = await getCollectionUIDInCacheDir();
                           await cacheClient.itemSet(
                               itemManager, colUid, itemUpdatedFromServer);
@@ -1995,14 +2000,11 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
 
                           itemListResponse.items.remove(eteItem);
 
-                          itemListResponse.items[
-                                  await itemManager.cacheSaveWithContent(
-                                      itemUpdatedFromServer)] =
-                              ItemListItem.fromMap({
+                          itemListResponse.items[itemManager.cacheSave(
+                              itemUpdatedFromServer)] = ItemListItem.fromMap({
                             "itemContent": contentFromServer,
-                            "itemUid": await itemUpdatedFromServer.getUid(),
-                            "itemIsDeleted":
-                                await itemUpdatedFromServer.isDeleted(),
+                            "itemUid": itemUpdatedFromServer.uid,
+                            "itemIsDeleted": itemUpdatedFromServer.isDeleted,
                             "itemType": (await itemUpdatedFromServer.getMeta())
                                 .itemType,
                             "itemName":
@@ -2012,16 +2014,15 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                           });
                           dbRowsInsert([
                             MapEntry(
-                                await itemManager.cacheSaveWithContent(
-                                    itemUpdatedFromServer),
-                                itemListResponse.items[
-                                    await itemManager.cacheSaveWithContent(
-                                        itemUpdatedFromServer)]!)
+                                itemManager.cacheSave(itemUpdatedFromServer),
+                                itemListResponse.items[itemManager
+                                    .cacheSave(itemUpdatedFromServer)]!)
                           ], widget.db, widget.colType);
                           itemListResponse.items.clear();
                           setState(() {
-                            _itemListResponse = Future<ItemListResponse>.value(
-                                itemListResponse);
+                            _itemListResponse =
+                                Future<UtilItemListResponse>.value(
+                                    itemListResponse);
                           });
                         }
                       }
@@ -2054,7 +2055,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
               itemListResponse.items.clear();
               setState(() {
                 _itemListResponse =
-                    Future<ItemListResponse>.value(itemListResponse);
+                    Future<UtilItemListResponse>.value(itemListResponse);
               });
               //_refreshIndicatorKey.currentState?.show();
             } else {
@@ -2145,13 +2146,13 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     }
   }
 
-  Future<Map<String, dynamic>> onPressedToggleCompletion(
-      Uint8List byteBuffer,
-      VCalendar icalendar,
-      EtebaseItemManager itemManager,
-      VTodo compTodo) async {
-    final eteItem = await itemManager.cacheLoad(byteBuffer);
-    final itemClone = await eteItem.clone();
+  Future<Map<String, dynamic>> onPressedToggleCompletion(Uint8List byteBuffer,
+      VCalendar icalendar, ItemManager itemManager, VTodo compTodo) async {
+    final eteItem = itemManager.cacheLoad(byteBuffer);
+
+    // final itemClone = await itemManager.create(
+    //     await eteItem.getMeta(), await eteItem.getContent());
+    final itemClone = eteItem;
     final todoComp = compTodo;
     bool sequenceChange = false;
     const changedStatus = TodoStatus.completed;
@@ -2205,29 +2206,30 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     await itemClone.setContent(utf8.encode(actualNextTodo.parent!.toString()));
     await itemManager.transaction([itemClone]);
     await eteItem.setContent(await itemClone.getContent());
-    final eteItemFromServer = await itemManager.fetch(await eteItem.getUid());
+    final eteItemFromServer = await itemManager.fetch(eteItem.uid);
     var contentFromServer = await eteItemFromServer.getContent();
     final icalendarUpdated =
         VComponent.parse(utf8.decode(contentFromServer)) as VCalendar;
     return {
-      "item": await itemManager.cacheSaveWithContent(eteItemFromServer),
+      "item": itemManager.cacheSave(eteItemFromServer),
       "itemSentToServer": itemClone,
       "icalendar": icalendarUpdated,
       "itemContent": contentFromServer,
       "todo": icalendarUpdated.todo!,
-      "itemIsDeleted": (await eteItemFromServer.isDeleted()),
-      "itemUid": (await eteItemFromServer.getUid()),
+      "itemIsDeleted": (eteItemFromServer.isDeleted),
+      "itemUid": (eteItemFromServer.uid),
     };
   }
 
   Future<Map<String, dynamic>?> onPressedModifyDueDate(
       Uint8List byteBuffer,
       VCalendar icalendar,
-      EtebaseItemManager itemManager,
+      ItemManager itemManager,
       VTodo compTodo,
       BuildContext context) async {
-    final eteItem = await itemManager.cacheLoad(byteBuffer);
-    final itemClone = await eteItem.clone();
+    final eteItem = itemManager.cacheLoad(byteBuffer);
+    final itemClone = await itemManager.create(
+        await eteItem.getMeta(), await eteItem.getContent());
     final todoComp = compTodo;
     bool sequenceChange = false;
     final changedStatus = todoComp.status;
@@ -2329,7 +2331,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     await itemClone.setMeta(itemMetaClone);
     if (kDebugMode) {
       print("--------BEGIN Intended changes---------");
-      print("ETAG: ${await itemClone.getEtag()}");
+      print("ETAG: ${itemClone.etag}");
       print(actualNextTodo.parent!.toString());
       print("--------END Intended changes-----------");
     }
@@ -2337,29 +2339,30 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     await itemClone.setContent(utf8.encode(actualNextTodo.parent!.toString()));
     await itemManager.transaction([itemClone]);
     await eteItem.setContent(await itemClone.getContent());
-    final eteItemFromServer = await itemManager.fetch(await eteItem.getUid());
+    final eteItemFromServer = await itemManager.fetch(eteItem.uid);
     final icalendarUpdated =
         VComponent.parse(utf8.decode(await eteItemFromServer.getContent()))
             as VCalendar;
     return {
-      "item": await itemManager.cacheSaveWithContent(eteItemFromServer),
+      "item": itemManager.cacheSave(eteItemFromServer),
       "itemSentToServer": itemClone,
       "icalendar": icalendarUpdated,
       "itemContent": (await eteItemFromServer.getContent()),
       "todo": icalendarUpdated.todo!,
-      "itemIsDeleted": (await eteItemFromServer.isDeleted()),
-      "itemUid": (await eteItemFromServer.getUid()),
+      "itemIsDeleted": (eteItemFromServer.isDeleted),
+      "itemUid": (eteItemFromServer.uid),
     };
   }
 
   Future<Map<String, dynamic>?> onPressedModifySnooze(
       Uint8List byteBuffer,
       VCalendar icalendar,
-      EtebaseItemManager itemManager,
+      ItemManager itemManager,
       VTodo compTodo,
       BuildContext context) async {
-    final eteItem = await itemManager.cacheLoad(byteBuffer);
-    final itemClone = await eteItem.clone();
+    final eteItem = itemManager.cacheLoad(byteBuffer);
+    final itemClone = await itemManager.create(
+        await eteItem.getMeta(), await eteItem.getContent());
     final todoComp = compTodo;
     bool sequenceChange = false;
     final changedStatus = todoComp.status;
@@ -2450,18 +2453,18 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     await itemClone.setContent(utf8.encode(actualNextTodo.parent!.toString()));
     await itemManager.transaction([itemClone]);
     await eteItem.setContent(await itemClone.getContent());
-    final eteItemFromServer = await itemManager.fetch(await eteItem.getUid());
+    final eteItemFromServer = await itemManager.fetch(eteItem.uid);
     final icalendarUpdated =
         VComponent.parse(utf8.decode(await eteItemFromServer.getContent()))
             as VCalendar;
     return {
-      "item": await itemManager.cacheSaveWithContent(eteItemFromServer),
+      "item": itemManager.cacheSave(eteItemFromServer),
       "itemSentToServer": itemClone,
       "icalendar": icalendarUpdated,
       "itemContent": (await eteItemFromServer.getContent()),
       "todo": icalendarUpdated.todo!,
-      "itemIsDeleted": (await eteItemFromServer.isDeleted()),
-      "itemUid": (await eteItemFromServer.getUid()),
+      "itemIsDeleted": (eteItemFromServer.isDeleted),
+      "itemUid": (eteItemFromServer.uid),
     };
   }
 }

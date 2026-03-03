@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
 
@@ -7,6 +8,7 @@ import 'package:ete_sync_app/etebase_item_model.dart';
 import 'package:ete_sync_app/etebase_note_model.dart';
 import 'package:ete_sync_app/i_calendar_custom_parser.dart';
 import 'package:etebase_flutter/etebase_flutter.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -15,6 +17,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:rrule/rrule.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqlite3/sqlite3.dart';
+import 'package:sodium/sodium_sumo.dart';
 
 Future<String> getCacheDir() async {
   final value =
@@ -25,15 +28,18 @@ Future<String> getCacheDir() async {
 const eteCacheAccountEncryptionKeyString = "eteCacheAccountEncryptionKey";
 
 Future<String> getUsernameInCacheDir() async {
-  final userNames =
-      Directory(await getCacheDir()).listSync().map((e) => e.path).toList();
+  final userNames = Directory(await getCacheDir())
+      .listSync()
+      .map((e) => e.path)
+      .toList()
+      .where((item) => !item.endsWith(".lock") && !item.endsWith(".hive"));
   late final String username;
   if (userNames.length == 1) {
     username = userNames.first.split("/").last;
   } else if (userNames.isEmpty) {
     throw Exception("No usernames in the cache.");
   } else {
-    throw Exception("More than one username in the cache");
+    throw Exception("More than one username in the cache ${userNames}");
   }
 
   return username;
@@ -93,14 +99,18 @@ Future<Uri?> getServerUri() async {
   return serverUri;
 }
 
-Future<EtebaseClient> getEtebaseClient() async {
+Future<Client> getEtebaseClient() async {
   final Future<SharedPreferences> prefsInstance =
       SharedPreferences.getInstance();
   final SharedPreferences prefs = await prefsInstance;
   final eteBaseUrlRawString = prefs.getString("ete_base_url");
+  final sodium = await SodiumSumoInit.init(
+    // replace with wherever libsodium is located on your machine
+    () => DynamicLibrary.open('/usr/lib/x86_64-linux-gnu/libsodium.so'),
+  );
   final serverUri =
       eteBaseUrlRawString != null ? Uri.tryParse(eteBaseUrlRawString) : null;
-  final client = await EtebaseClient.create('my-client', serverUri);
+  final client = FlutterClient.create(serverUrl: serverUri);
   return client;
 }
 
@@ -112,11 +122,12 @@ Future<List> getItemManager() async {
   final db = sqlite3.open(await dbFilePath());
   Uri? serverUri = await getServerUri();
 
-  late final EtebaseClient client;
+  late final Client client;
   try {
     client = await getEtebaseClient();
   } on EtebaseException catch (e) {
-    if (e.code == EtebaseErrorCode.urlParse) {
+    // very wrong. not sure if there's a corollary in the new code
+    if (e.message == "url_parse") {
       return [null, null, null, null, serverUri, null, null, db, null, null];
     }
     rethrow;
@@ -161,18 +172,22 @@ Future<List> getItemManager() async {
     ];
   }
   const secureStorage = FlutterSecureStorage();
-
   final eteCacheAccountEncryptionKey = await secureStorage
           .read(key: eteCacheAccountEncryptionKeyString)
           .then((value) => value != null ? base64Decode(value) : value)
       as Uint8List?;
-  final cacheClient =
-      await EtebaseFileSystemCache.create(client, cacheDir, username);
+  //final secureKey = client.randomKey(Account.cacheKeyLength);
 
-  late final EtebaseAccount etebase;
+  final cacheClient = await Cache.create(client, username);
+
+  late final Account etebase;
   try {
-    etebase =
-        await cacheClient.loadAccount(client, eteCacheAccountEncryptionKey);
+    final sodium = await SodiumSumoInit.init(
+      // replace with wherever libsodium is located on your machine
+      () => DynamicLibrary.open('/usr/lib/x86_64-linux-gnu/libsodium.so'),
+    );
+    etebase = await cacheClient
+        .loadAccount(SecureKey.fromList(sodium, eteCacheAccountEncryptionKey!));
   } catch (error) {
     return [
       client,
@@ -189,12 +204,12 @@ Future<List> getItemManager() async {
   }
   final collUid = await getCollectionUIDInCacheDir();
 
-  final collectionManager = await etebase.getCollectionManager();
+  final collectionManager = etebase.collectionManager;
 
   final collection = await collectionManager.fetch(collUid);
   await cacheClient.collectionSet(collectionManager, collection);
 
-  final itemManager = await collectionManager.getItemManager(collection);
+  final itemManager = collectionManager.getItemManager(collection);
 
   await cacheClient.dispose();
 
@@ -205,7 +220,7 @@ Future<List> getItemManager() async {
     (await collection.getMeta()).name,
     serverUri,
     cacheClient,
-    await collection.getCollectionType(),
+    collection.collectionType,
     db,
     username,
     cacheDir,
@@ -275,14 +290,14 @@ class ItemListItem {
   }
 }
 
-class ItemListResponse {
-  final EtebaseItemManager itemManager;
+class UtilItemListResponse {
+  final ItemManager itemManager;
   final String username;
   final String cacheDir;
 
   final Map<Uint8List, ItemListItem> items;
 
-  ItemListResponse(
+  UtilItemListResponse(
       {required this.itemManager,
       required this.username,
       required this.cacheDir,
@@ -299,7 +314,7 @@ class ItemListResponse {
   }
 }
 
-class CollectionListItem {
+class UtilCollectionListItem {
   final bool itemIsDeleted;
 
   final String itemUid;
@@ -309,7 +324,7 @@ class CollectionListItem {
   final String itemCollectionType;
   final String? itemColor;
 
-  CollectionListItem(
+  UtilCollectionListItem(
       {required this.itemIsDeleted,
       required this.itemUid,
       required this.itemContent,
@@ -318,8 +333,8 @@ class CollectionListItem {
       required this.itemCollectionType,
       required this.itemColor});
 
-  static CollectionListItem fromMap(Map<String, dynamic> theMap) {
-    return CollectionListItem(
+  static UtilCollectionListItem fromMap(Map<String, dynamic> theMap) {
+    return UtilCollectionListItem(
       itemIsDeleted: theMap["itemIsDeleted"],
       itemUid: theMap["itemUid"],
       itemContent: theMap["itemContent"],
@@ -345,10 +360,10 @@ class CollectionListItem {
 }
 
 class CollectionListResponse {
-  final EtebaseCollectionManager collectionManager;
+  final CollectionManager collectionManager;
   final String username;
   final String cacheDir;
-  final Map<EtebaseCollection, CollectionListItem> items;
+  final Map<Collection, UtilCollectionListItem> items;
 
   CollectionListResponse(
       {required this.collectionManager,
@@ -366,8 +381,8 @@ class CollectionListResponse {
   }
 }
 
-Future<ItemListResponse> getItemListResponse(
-    EtebaseItemManager itemManager, EtebaseClient client, String colUid,
+Future<UtilItemListResponse> getItemListResponse(
+    ItemManager itemManager, Client client, String colUid,
     {bool cacheOnly = false, Database? db}) async {
   final dbHandler = db ?? sqlite3.open(await dbFilePath());
   bool done = false;
@@ -377,21 +392,24 @@ Future<ItemListResponse> getItemListResponse(
   final username = await getUsernameInCacheDir();
   final cacheDir = await getCacheDir();
 
-  final cacheClient =
-      await EtebaseFileSystemCache.create(client, cacheDir, username);
+  Cache cacheClient = await Cache.create(client, username);
   const secureStorage = FlutterSecureStorage();
 
   final eteCacheAccountEncryptionKey = await secureStorage
           .read(key: eteCacheAccountEncryptionKeyString)
           .then((value) => value != null ? base64Decode(value) : value)
       as Uint8List?;
+  final sodium = await SodiumSumoInit.init(
+    // replace with wherever libsodium is located on your machine
+    () => DynamicLibrary.open('/usr/lib/x86_64-linux-gnu/libsodium.so'),
+  );
 
-  final etebase =
-      await cacheClient.loadAccount(client, eteCacheAccountEncryptionKey);
+  final etebase = await cacheClient
+      .loadAccount(SecureKey.fromList(sodium, eteCacheAccountEncryptionKey!));
   final collUid = await getCollectionUIDInCacheDir();
-  final collectionManager = await etebase.getCollectionManager();
+  final collectionManager = etebase.collectionManager;
 
-  late final EtebaseCollection collection;
+  late final Collection collection;
   try {
     collection = await cacheClient.collectionGet(collectionManager, collUid);
   } catch (e) {
@@ -399,11 +417,15 @@ Future<ItemListResponse> getItemListResponse(
     await cacheClient.collectionSet(collectionManager, collection);
   }
 
-  final cacheItemManager = await collectionManager.getItemManager(collection);
+  final cacheItemManager = collectionManager.getItemManager(collection);
   theMap["itemManager"] = cacheItemManager;
   theMap["username"] = username;
   theMap["cacheDir"] = cacheDir;
-  stoken = await cacheClient.collectionLoadStoken(colUid);
+  try {
+    stoken = await cacheClient.collectionLoadStoken(colUid);
+  } on NotFound {
+    stoken = null;
+  }
   final itemsAtCollPath =
       Directory("$cacheDir/$username/cols/$collUid/items").listSync().toList();
 
@@ -424,19 +446,18 @@ Future<ItemListResponse> getItemListResponse(
   while (!done && !cacheOnly) {
     bool loopAgainSpecial = false;
     try {
-      final EtebaseItemListResponse rawItemList = await itemManager.list(
-          EtebaseFetchOptions(
-              stoken: itemsAtCollPath.isNotEmpty ? stoken : null, limit: 50));
+      final rawItemList = await itemManager.list(ItemFetchOptions(
+          stoken: itemsAtCollPath.isNotEmpty ? stoken : null, limit: 200));
 
-      List<EtebaseItem> itemList = await (rawItemList).getData();
-      stoken = await rawItemList.getStoken();
-      done = await rawItemList.isDone();
+      List<Item> itemList = (rawItemList).data;
+      stoken = rawItemList.stoken;
+      done = rawItemList.isDone;
       final changesSince = <Uint8List, ItemListItem>{};
       for (final item in itemList) {
         //itemsToPutInCache.add(item);
         await cacheClient.itemSet(itemManager, colUid, item);
-        final itemByteBuffer = await itemManager.cacheSaveWithContent(item);
-        final itemUid = await item.getUid();
+        final itemByteBuffer = itemManager.cacheSave(item);
+        final itemUid = item.uid;
         for (final elementKeyInMap
             in (theMap["items"] as Map<Uint8List, Map<String, dynamic>>).keys) {
           if (elementKeyInMap == itemByteBuffer) {
@@ -445,7 +466,7 @@ Future<ItemListResponse> getItemListResponse(
           }
         }
         final theItemListItemAsMap = {
-          "itemIsDeleted": await item.isDeleted(),
+          "itemIsDeleted": item.isDeleted,
           "itemUid": itemUid,
           "itemContent": await item.getContent(),
           "itemType": (await item.getMeta()).itemType,
@@ -457,16 +478,19 @@ Future<ItemListResponse> getItemListResponse(
             ItemListItem.fromMap(theItemListItemAsMap);
       }
 
-      dbRowsInsert(changesSince.entries, dbHandler,
-          await collection.getCollectionType());
-    } on EtebaseException catch (e) {
-      switch (e.code) {
-        case EtebaseErrorCode.generic:
+      dbRowsInsert(changesSince.entries, dbHandler, collection.collectionType);
+    } on HttpFailure catch (e) {
+      switch (e.message) {
+        case "generic_error":
           if (e.message == "operation timed out") {
             loopAgainSpecial = true;
           }
         default:
           rethrow;
+      }
+    } on Exception catch (e) {
+      if (kDebugMode) {
+        print("Other error ($e)");
       }
     }
 
@@ -476,6 +500,8 @@ Future<ItemListResponse> getItemListResponse(
   }
 
   if (stoken != null) {
+    cacheClient = await Cache.create(client, username);
+
     await cacheClient.collectionSaveStoken(colUid, stoken);
   }
 
@@ -492,7 +518,7 @@ Future<ItemListResponse> getItemListResponse(
             mtime: value["mtime"],
           )));
   cacheClient.dispose();
-  return ItemListResponse(
+  return UtilItemListResponse(
     items: theMap["items"],
     cacheDir: theMap["cacheDir"],
     username: theMap["username"],
@@ -571,11 +597,11 @@ void dbRowsInsert(Iterable<MapEntry<Uint8List, ItemListItem>> value,
     //stmt..execute(element);
     stmt.execute(element);
 
-    stmt.dispose();
+    stmt.close();
   }
 }
 
-Future<Map<String, dynamic>> getCacheConfigInfo(EtebaseClient client) async {
+Future<Map<String, dynamic>> getCacheConfigInfo(Client client) async {
   final username = await getUsernameInCacheDir();
   final cacheDir = await getCacheDir();
 
@@ -585,13 +611,12 @@ Future<Map<String, dynamic>> getCacheConfigInfo(EtebaseClient client) async {
   return theMap;
 }
 
-Future<CollectionListResponse> getCollections(EtebaseClient client,
-    {EtebaseAccount? etebaseAccount,
-    String collectionType = "etebase.vtodo"}) async {
+Future<CollectionListResponse> getCollections(Client client,
+    {Account? etebaseAccount, String collectionType = "etebase.vtodo"}) async {
   final username = await getUsernameInCacheDir();
   final cacheDir = await getCacheDir();
-  final cacheClient =
-      await EtebaseFileSystemCache.create(client, cacheDir, username);
+
+  Cache cacheClient = await Cache.create(client, username);
   const secureStorage = FlutterSecureStorage();
 
   final eteCacheAccountEncryptionKey = etebaseAccount == null
@@ -600,16 +625,28 @@ Future<CollectionListResponse> getCollections(EtebaseClient client,
               .then((value) => value != null ? base64Decode(value) : value)
           as Uint8List?
       : null;
+  final sodium = await SodiumSumoInit.init(
+    // replace with wherever libsodium is located on your machine
+    () => DynamicLibrary.open('/usr/lib/x86_64-linux-gnu/libsodium.so'),
+  );
 
+  cacheClient = await Cache.create(client, username);
   final etebase = etebaseAccount ??
-      await cacheClient.loadAccount(client, eteCacheAccountEncryptionKey);
+      await cacheClient.loadAccount(
+          SecureKey.fromList(sodium, eteCacheAccountEncryptionKey!));
 
-  String? stoken = await cacheClient.loadStoken();
+  String? stoken;
+  try {
+    Cache cacheClient = await Cache.create(client, username);
+    stoken = await cacheClient.loadStoken();
+  } on NotFound {
+    stoken = null;
+  }
 
-  final collManager = await etebase.getCollectionManager();
+  final collManager = etebase.collectionManager;
 
   Map<String, dynamic> theMap = {};
-  theMap["items"] = <EtebaseCollection, Map<String, dynamic>>{};
+  theMap["items"] = <Collection, Map<String, dynamic>>{};
   theMap["username"] = username;
   theMap["cacheDir"] = cacheDir;
   theMap["collectionManager"] = collManager;
@@ -620,51 +657,58 @@ Future<CollectionListResponse> getCollections(EtebaseClient client,
       Directory("$cacheDir/$username/cols/").listSync().toList();
 
   for (var cachedItemUID in itemsAtCollPath.map((e) => e.path)) {
-    final item = await cacheClient.collectionGet(collManager, cachedItemUID);
-
-    if (await item.getCollectionType() != collectionType) {
+    cacheClient = await Cache.create(client, username);
+    Collection? itemTry;
+    try {
+      itemTry = await cacheClient.collectionGet(collManager, cachedItemUID);
+    } on NotFound {}
+    final item = itemTry;
+    if (item == null) {
+      continue;
+    }
+    if (item.collectionType != collectionType) {
       continue;
     }
     theMap["items"][item] = {
-      "itemIsDeleted": await item.isDeleted(),
-      "itemUid": await item.getUid(),
+      "itemIsDeleted": item.isDeleted,
+      "itemUid": item.uid,
       "itemContent": await item.getContent(),
       "itemName": (await item.getMeta()).name,
       "itemColor": (await item.getMeta()).color,
       "itemType": (await item.getMeta()).itemType,
-      "itemCollectionType": (await item.getCollectionType()),
+      "itemCollectionType": (item.collectionType),
     };
   }
 
   while (!done) {
-    EtebaseCollectionListResponse rawItemList = await collManager.list(
+    final rawItemList = await collManager.list(
         collectionType,
-        EtebaseFetchOptions(
-            stoken: theMap["items"].isNotEmpty ? stoken : null, limit: 50));
-    List<EtebaseCollection> itemList = await rawItemList.getData();
-    stoken = await rawItemList.getStoken();
-    done = await rawItemList.isDone();
+        FetchOptions(
+            stoken: theMap["items"].isNotEmpty ? stoken : null, limit: 200));
+    List<Collection> itemList = rawItemList.data;
+    stoken = rawItemList.stoken;
+    done = rawItemList.isDone;
 
     for (final item in itemList) {
-      final itemUid = await item.getUid();
+      final itemUid = item.uid;
       for (final elementKeyInMap
-          in (theMap["items"] as Map<EtebaseCollection, Map<String, dynamic>>)
-              .keys) {
-        if ((await elementKeyInMap.getUid()) == itemUid) {
+          in (theMap["items"] as Map<Collection, Map<String, dynamic>>).keys) {
+        if ((elementKeyInMap.uid) == itemUid) {
           (theMap["items"] as Map).remove(elementKeyInMap);
           break;
         }
       }
 
+      cacheClient = await Cache.create(client, username);
       await cacheClient.collectionSet(collManager, item);
       theMap["items"][item] = {
-        "itemIsDeleted": await item.isDeleted(),
-        "itemUid": await item.getUid(),
+        "itemIsDeleted": item.isDeleted,
+        "itemUid": item.uid,
         "itemContent": await item.getContent(),
         "itemName": (await item.getMeta()).name,
         "itemColor": (await item.getMeta()).color,
         "itemType": (await item.getMeta()).itemType,
-        "itemCollectionType": (await item.getCollectionType()),
+        "itemCollectionType": (item.collectionType),
       };
     }
   }
@@ -672,19 +716,18 @@ Future<CollectionListResponse> getCollections(EtebaseClient client,
     await cacheClient.saveStoken(stoken);
   }
 
-  theMap["items"] =
-      (theMap["items"] as Map<EtebaseCollection, Map<String, dynamic>>)
-          .map((key, value) => MapEntry(
-              key,
-              CollectionListItem(
-                itemIsDeleted: value["itemIsDeleted"],
-                itemUid: value["itemUid"],
-                itemContent: value["itemContent"],
-                itemName: value["itemName"],
-                itemColor: value["itemColor"],
-                itemType: value["itemType"],
-                itemCollectionType: value["itemCollectionType"],
-              )));
+  theMap["items"] = (theMap["items"] as Map<Collection, Map<String, dynamic>>)
+      .map((key, value) => MapEntry(
+          key,
+          UtilCollectionListItem(
+            itemIsDeleted: value["itemIsDeleted"],
+            itemUid: value["itemUid"],
+            itemContent: value["itemContent"],
+            itemName: value["itemName"],
+            itemColor: value["itemColor"],
+            itemType: value["itemType"],
+            itemCollectionType: value["itemCollectionType"],
+          )));
 
   return CollectionListResponse(
     items: theMap["items"],

@@ -1,25 +1,24 @@
 import 'dart:convert';
 
+import 'package:ete_sync_app/l10n/app_localizations.dart';
 import 'package:ete_sync_app/util.dart';
 import 'package:etebase_flutter/etebase_flutter.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:intl/intl.dart' as intl;
 
-class EtebaseItemNoteCreateRoute extends StatefulWidget {
-  const EtebaseItemNoteCreateRoute(
+class ItemNoteCreateRoute extends StatefulWidget {
+  const ItemNoteCreateRoute(
       {super.key, required this.itemManager, required this.client});
 
-  final EtebaseItemManager itemManager;
-  final EtebaseClient client;
+  final ItemManager itemManager;
+  final Client client;
 
   @override
-  State<StatefulWidget> createState() => _EtebaseItemNoteCreateRouteState();
+  State<StatefulWidget> createState() => _ItemNoteCreateRouteState();
 }
 
-class _EtebaseItemNoteCreateRouteState
-    extends State<EtebaseItemNoteCreateRoute> {
+class _ItemNoteCreateRouteState extends State<ItemNoteCreateRoute> {
   final nameController = TextEditingController();
   final contentController = TextEditingController();
   bool showMarkdown = false;
@@ -87,7 +86,7 @@ class _EtebaseItemNoteCreateRouteState
                       onPressed: () async {
                         if (_formKey.currentState!.validate()) {
                           final item = await widget.itemManager.create(
-                              EtebaseItemMetadata(
+                              ItemMetadata(
                                   mtime: DateTime.now(),
                                   name: nameController.text.isNotEmpty
                                       ? nameController.text
@@ -96,14 +95,13 @@ class _EtebaseItemNoteCreateRouteState
 
                           await widget.itemManager.transaction([item]);
 
-                          final itemUpdatedFromServer = await widget.itemManager
-                              .fetch((await item.getUid()));
+                          final itemUpdatedFromServer =
+                              await widget.itemManager.fetch((item.uid));
 
                           final username = await getUsernameInCacheDir();
 
                           final cacheClient =
-                              await EtebaseFileSystemCache.create(
-                                  widget.client, await getCacheDir(), username);
+                              await Cache.create(widget.client, username);
                           final colUid = await getCollectionUIDInCacheDir();
                           await cacheClient.itemSet(widget.itemManager, colUid,
                               itemUpdatedFromServer);
@@ -113,12 +111,12 @@ class _EtebaseItemNoteCreateRouteState
                               await itemUpdatedFromServer.getContent();
 
                           final sendingToNavigator = {
-                            "item": await widget.itemManager
-                                .cacheSaveWithContent(itemUpdatedFromServer),
+                            "item": widget.itemManager.cacheSave(
+                              itemUpdatedFromServer,
+                            ),
                             "itemContent": updatedItemContent,
-                            "itemIsDeleted":
-                                await itemUpdatedFromServer.isDeleted(),
-                            "itemUid": await itemUpdatedFromServer.getUid(),
+                            "itemIsDeleted": itemUpdatedFromServer.isDeleted,
+                            "itemUid": itemUpdatedFromServer.uid,
                             "itemName":
                                 (await itemUpdatedFromServer.getMeta()).name,
                           };
@@ -136,24 +134,24 @@ class _EtebaseItemNoteCreateRouteState
   }
 }
 
-class EtebaseItemNoteRoute extends StatefulWidget {
-  const EtebaseItemNoteRoute(
+class ItemNoteRoute extends StatefulWidget {
+  const ItemNoteRoute(
       {super.key,
       required this.itemManager,
       required this.client,
       required this.item,
       required this.itemMap});
 
-  final EtebaseItemManager itemManager;
-  final EtebaseClient client;
-  final EtebaseItem item;
+  final ItemManager itemManager;
+  final Client client;
+  final Item item;
   final Map<String, dynamic> itemMap;
 
   @override
-  State<StatefulWidget> createState() => _EtebaseItemNoteRouteState();
+  State<StatefulWidget> createState() => _ItemNoteRouteState();
 }
 
-class _EtebaseItemNoteRouteState extends State<EtebaseItemNoteRoute> {
+class _ItemNoteRouteState extends State<ItemNoteRoute> {
   final nameController = TextEditingController();
   final contentController = TextEditingController();
   bool showMarkdown = false;
@@ -253,7 +251,9 @@ class _EtebaseItemNoteRouteState extends State<EtebaseItemNoteRoute> {
               updatedName = nameController.text;
             }
             bool anyChange = false;
-            final itemClone = await widget.item.clone();
+
+            final itemClone = widget.itemManager
+                .cacheLoad(widget.itemManager.cacheSave(widget.item));
 
             if (utf8.decode(await widget.item.getContent()) !=
                 contentController.text) {
@@ -270,12 +270,11 @@ class _EtebaseItemNoteRouteState extends State<EtebaseItemNoteRoute> {
             await widget.itemManager.transaction([itemClone]);
 
             final itemUpdatedFromServer =
-                await widget.itemManager.fetch((await widget.item.getUid()));
+                await widget.itemManager.fetch((widget.item.uid));
 
             final username = await getUsernameInCacheDir();
 
-            final cacheClient = await EtebaseFileSystemCache.create(
-                widget.client, await getCacheDir(), username);
+            final cacheClient = await Cache.create(widget.client, username);
             final colUid = await getCollectionUIDInCacheDir();
             await cacheClient.itemSet(
                 widget.itemManager, colUid, itemUpdatedFromServer);
@@ -284,11 +283,12 @@ class _EtebaseItemNoteRouteState extends State<EtebaseItemNoteRoute> {
             final updatedItemContent = await itemUpdatedFromServer.getContent();
 
             final sendingToNavigator = {
-              "item": await widget.itemManager
-                  .cacheSaveWithContent(itemUpdatedFromServer),
+              "item": widget.itemManager.cacheSave(
+                itemUpdatedFromServer,
+              ),
               "itemContent": updatedItemContent,
-              "itemIsDeleted": await itemUpdatedFromServer.isDeleted(),
-              "itemUid": await itemUpdatedFromServer.getUid(),
+              "itemIsDeleted": itemUpdatedFromServer.isDeleted,
+              "itemUid": itemUpdatedFromServer.uid,
               "itemName": (await itemUpdatedFromServer.getMeta()).name,
             };
             if (context.mounted) {
@@ -328,12 +328,11 @@ class _EtebaseItemNoteRouteState extends State<EtebaseItemNoteRoute> {
               wasEdited = true;
             });
             final itemUpdatedFromServer =
-                await widget.itemManager.fetch((await widget.item.getUid()));
+                await widget.itemManager.fetch((widget.item.uid));
 
             final username = await getUsernameInCacheDir();
 
-            final cacheClient = await EtebaseFileSystemCache.create(
-                widget.client, await getCacheDir(), username);
+            final cacheClient = await Cache.create(widget.client, username);
             final colUid = await getCollectionUIDInCacheDir();
             await cacheClient.itemSet(
                 widget.itemManager, colUid, itemUpdatedFromServer);
@@ -341,11 +340,12 @@ class _EtebaseItemNoteRouteState extends State<EtebaseItemNoteRoute> {
 
             final updatedItemContent = await itemUpdatedFromServer.getContent();
             final sendingToNavigator = {
-              "item": await widget.itemManager
-                  .cacheSaveWithContent(itemUpdatedFromServer),
+              "item": widget.itemManager.cacheSave(
+                itemUpdatedFromServer,
+              ),
               "itemContent": updatedItemContent,
-              "itemIsDeleted": await itemUpdatedFromServer.isDeleted(),
-              "itemUid": await itemUpdatedFromServer.getUid(),
+              "itemIsDeleted": itemUpdatedFromServer.isDeleted,
+              "itemUid": itemUpdatedFromServer.uid,
               "itemName": (await itemUpdatedFromServer.getMeta()).name,
             };
             if (context.mounted) {

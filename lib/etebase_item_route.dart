@@ -3,6 +3,7 @@ import 'package:collection/collection.dart';
 import 'package:datetime_picker_formfield_new/datetime_picker_formfield.dart';
 import 'package:enough_icalendar/enough_icalendar.dart';
 import 'package:ete_sync_app/i_calendar_custom_parser.dart';
+import 'package:ete_sync_app/l10n/app_localizations.dart';
 import 'package:ete_sync_app/util.dart';
 import 'package:etebase_flutter/etebase_flutter.dart';
 import 'package:flutter/foundation.dart';
@@ -16,7 +17,6 @@ import 'package:intl/intl.dart' hide TextDirection;
 
 import 'package:pretty_diff_text/pretty_diff_text.dart';
 import 'package:rrule_generator/rrule_generator.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 
 enum StartDateTimeOptions {
   /* hide until array index -> significance  */
@@ -68,8 +68,8 @@ class EtebaseItemCreateRoute extends StatefulWidget {
     required this.client,
   });
 
-  final EtebaseItemManager itemManager;
-  final EtebaseClient client;
+  final ItemManager itemManager;
+  final Client client;
 
   @override
   State<StatefulWidget> createState() => _EtebaseItemCreateRouteState();
@@ -671,7 +671,7 @@ END:VALARM""";
 
             actualNextTodo.checkValidity();
             final item = await widget.itemManager.create(
-                EtebaseItemMetadata(mtime: DateTime.now()),
+                ItemMetadata(mtime: DateTime.now()),
                 utf8.encode(todoComp.parent!.toString()));
             var retries = 0;
             var succeeded = false;
@@ -679,12 +679,16 @@ END:VALARM""";
               try {
                 await widget.itemManager.transaction([item]);
                 succeeded = true;
-              } on EtebaseException catch (e) {
-                if (e.code == EtebaseErrorCode.generic) {
+              } on HttpFailure catch (e) {
+                if (e.message == "generic_error") {
                   retries += 1;
                 }
-                if (retries >= 5 || e.code != EtebaseErrorCode.generic) {
+                if (retries >= 5 || e.message != "generic_error") {
                   rethrow;
+                }
+              } on Exception catch (e) {
+                if (kDebugMode) {
+                  print(e);
                 }
               }
             }
@@ -693,12 +697,11 @@ END:VALARM""";
             }
 
             final itemUpdatedFromServer =
-                await widget.itemManager.fetch((await item.getUid()));
+                await widget.itemManager.fetch((item.uid));
 
             final username = await getUsernameInCacheDir();
 
-            final cacheClient = await EtebaseFileSystemCache.create(
-                widget.client, await getCacheDir(), username);
+            final cacheClient = await Cache.create(widget.client, username);
             final colUid = await getCollectionUIDInCacheDir();
             await cacheClient.itemSet(
                 widget.itemManager, colUid, itemUpdatedFromServer);
@@ -708,12 +711,11 @@ END:VALARM""";
             final updateVCalendar =
                 VComponent.parse(utf8.decode(updatedItemContent)) as VCalendar;
             final sendingToNavigator = {
-              "item": await widget.itemManager
-                  .cacheSaveWithContent(itemUpdatedFromServer),
+              "item": await widget.itemManager.cacheSave(itemUpdatedFromServer),
               "icalendar": itemUpdatedFromServer,
               "itemContent": updatedItemContent,
-              "itemIsDeleted": await itemUpdatedFromServer.isDeleted(),
-              "itemUid": await itemUpdatedFromServer.getUid(),
+              "itemIsDeleted": itemUpdatedFromServer.isDeleted,
+              "itemUid": itemUpdatedFromServer.uid,
               "todo": updateVCalendar.todo!,
             };
             if (context.mounted) {
@@ -736,11 +738,11 @@ class EtebaseItemRoute extends StatefulWidget {
     required this.client,
   });
 
-  final EtebaseItem item;
-  final EtebaseItemManager itemManager;
+  final Item item;
+  final ItemManager itemManager;
   final VCalendar icalendar;
   final Map<String, dynamic> itemMap;
-  final EtebaseClient client;
+  final Client client;
 
   @override
   State<StatefulWidget> createState() => _EtebaseItemRouteState();
@@ -1027,20 +1029,18 @@ END:VALARM"""*/
                       final itemRevisionListResponse =
                           await widget.itemManager.itemRevisions(
                               widget.item,
-                              EtebaseFetchOptions(
+                              RevisionFetchOptions(
                                 iterator: revisionIteratorValue,
                               ));
-                      for (var element
-                          in await itemRevisionListResponse.getData()) {
+                      for (var element in itemRevisionListResponse.data) {
                         eteItemRevisionList.add(RevisionItemWrapper(
                             revision: element,
-                            uid: await element.getUid(),
+                            uid: element.uid,
                             mtime: (await element.getMeta()).mtime));
                       }
 
-                      revisionIteratorValue =
-                          await itemRevisionListResponse.getIterator();
-                      done = await itemRevisionListResponse.isDone();
+                      revisionIteratorValue = itemRevisionListResponse.iterator;
+                      done = itemRevisionListResponse.isDone;
                     }
 
                     if (context.mounted) {
@@ -1056,7 +1056,9 @@ END:VALARM"""*/
                             as VCalendar;
                         revisionCalendar.todo!.sequence =
                             (revisionCalendar.todo!.sequence ?? 0) + 1;
-                        final revisionClone = await action.revision.clone();
+                        final revisionClone = await widget.itemManager.create(
+                            await action.revision.getMeta(),
+                            await action.revision.getContent());
                         await revisionClone.setContent(
                             utf8.encode(revisionCalendar.toString()));
                         final revisionMetaClone =
@@ -1074,12 +1076,11 @@ END:VALARM"""*/
                                 as VCalendar;
                         final sendingToNavigator = {
                           "item": await widget.itemManager
-                              .cacheSaveWithContent(itemUpdatedFromServer),
+                              .cacheSave(itemUpdatedFromServer),
                           "icalendar": itemUpdatedFromServer,
                           "itemContent": updatedItemContent,
-                          "itemIsDeleted":
-                              await itemUpdatedFromServer.isDeleted(),
-                          "itemUid": await itemUpdatedFromServer.getUid(),
+                          "itemIsDeleted": itemUpdatedFromServer.isDeleted,
+                          "itemUid": itemUpdatedFromServer.uid,
                           "todo": updateVCalendar.todo!,
                         };
                         if (context.mounted) {
@@ -1490,7 +1491,8 @@ END:VALARM"""*/
         onPressed: () async {
           if (_formKey.currentState!.validate()) {
             //                                  final itemUid = await this.widget.item.getUid();
-            final itemClone = await widget.item.clone();
+            final itemClone = widget.itemManager
+                .cacheLoad(widget.itemManager.cacheSave(widget.item));
             bool sequenceChange = false;
             /*
                             
@@ -1622,12 +1624,14 @@ END:VALARM"""*/
             final itemMetaClone = (await itemClone.getMeta()).copyWith(
                 mtime: nextTodo?.lastModified ?? todoComp.lastModified);
             await itemClone.setMeta(itemMetaClone);
-
+            if (actualNextTodo.parent!.getProperty("etag") != null) {
+              actualNextTodo.parent!.removeProperty("etag");
+            }
             await itemClone
                 .setContent(utf8.encode(actualNextTodo.parent!.toString()));
             try {
               await widget.itemManager.transaction([itemClone]);
-            } on EtebaseException catch (error, stackTrace) {
+            } on Conflict catch (error, stackTrace) {
               if (kDebugMode) {
                 print(error);
                 print(stackTrace);
@@ -1639,7 +1643,7 @@ END:VALARM"""*/
                   action: SnackBarAction(
                     label: 'OK',
                     onPressed: () async {
-                      if (error.code == EtebaseErrorCode.conflict) {
+                      if (error.status == 409) {
                         final itemUpdatedFromServer = await widget.itemManager
                             .fetch(widget.itemMap["itemUid"]);
                         await widget.item.setContent(
@@ -1653,7 +1657,7 @@ END:VALARM"""*/
                         final todoFromServer = iCalendarFromServer.todo!;
                         await widget.item
                             .setMeta(await itemUpdatedFromServer.getMeta());
-                        if (await itemUpdatedFromServer.isDeleted()) {
+                        if (itemUpdatedFromServer.isDeleted) {
                           await widget.item.delete();
                         }
 
@@ -1672,14 +1676,18 @@ END:VALARM"""*/
                 ));
               }
               return;
+            } on Exception catch (error, stackTrace) {
+              if (kDebugMode) {
+                print(error);
+                print(stackTrace);
+              }
             }
             final itemUpdatedFromServer =
                 await widget.itemManager.fetch(widget.itemMap["itemUid"]);
 
             final username = await getUsernameInCacheDir();
 
-            final cacheClient = await EtebaseFileSystemCache.create(
-                widget.client, await getCacheDir(), username);
+            final cacheClient = await Cache.create(widget.client, username);
             final colUid = await getCollectionUIDInCacheDir();
             await cacheClient.itemSet(
                 widget.itemManager, colUid, itemUpdatedFromServer);
@@ -1688,14 +1696,14 @@ END:VALARM"""*/
                 .setContent(await itemUpdatedFromServer.getContent());
             await widget.item.setMeta(await itemUpdatedFromServer.getMeta());
 
-            if (await itemUpdatedFromServer.isDeleted()) {
+            if (itemUpdatedFromServer.isDeleted) {
               await widget.item.delete();
             }
 
             final possiblyChangedItemMapData = {
               "itemContent": await widget.item.getContent(),
-              "itemUid": await widget.item.getUid(),
-              "itemIsDeleted": await widget.item.isDeleted()
+              "itemUid": widget.item.uid,
+              "itemIsDeleted": widget.item.isDeleted
             };
             widget.itemMap.addAll(possiblyChangedItemMapData);
 
@@ -1703,12 +1711,11 @@ END:VALARM"""*/
             final updateVCalendar =
                 VComponent.parse(utf8.decode(updatedItemContent)) as VCalendar;
             final sendingToNavigator = {
-              "item": await widget.itemManager
-                  .cacheSaveWithContent(itemUpdatedFromServer),
+              "item": widget.itemManager.cacheSave(itemUpdatedFromServer),
               "icalendar": itemUpdatedFromServer,
               "itemContent": updatedItemContent,
-              "itemIsDeleted": await itemUpdatedFromServer.isDeleted(),
-              "itemUid": await itemUpdatedFromServer.getUid(),
+              "itemIsDeleted": itemUpdatedFromServer.isDeleted,
+              "itemUid": itemUpdatedFromServer.uid,
               "todo": updateVCalendar.todo!,
             };
             if (context.mounted) {
@@ -1742,34 +1749,58 @@ END:VALARM"""*/
                 );
               });
           if (action == "OK") {
+            final contentBeforeDelete = await widget.item.getContent();
+
+            final copyBeforeDelete = await widget.itemManager.create(
+                await widget.item.getMeta(), await widget.item.getContent());
             await widget.item.delete();
             await widget.itemManager.transaction([widget.item]);
             setState(() {
               wasEdited = true;
             });
             final itemUpdatedFromServer =
-                await widget.itemManager.fetch((await widget.item.getUid()));
+                await widget.itemManager.fetch((widget.item.uid));
 
             final username = await getUsernameInCacheDir();
 
-            final cacheClient = await EtebaseFileSystemCache.create(
-                widget.client, await getCacheDir(), username);
+            final cacheClient = await Cache.create(widget.client, username);
             final colUid = await getCollectionUIDInCacheDir();
             await cacheClient.itemSet(
                 widget.itemManager, colUid, itemUpdatedFromServer);
             await cacheClient.dispose();
 
             final updatedItemContent = await itemUpdatedFromServer.getContent();
-            final updateVCalendar =
-                VComponent.parse(utf8.decode(updatedItemContent)) as VCalendar;
-            final sendingToNavigator = {
-              "item": await widget.itemManager
-                  .cacheSaveWithContent(itemUpdatedFromServer),
-              "icalendar": itemUpdatedFromServer,
-              "itemContent": updatedItemContent,
-              "itemIsDeleted": await itemUpdatedFromServer.isDeleted(),
-              "itemUid": await itemUpdatedFromServer.getUid(),
-              "todo": updateVCalendar.todo!,
+            Map sendingToNavigator = {};
+            VCalendar? updateVCalendar;
+            try {
+              updateVCalendar =
+                  VComponent.parse(utf8.decode(updatedItemContent))
+                      as VCalendar;
+            } on FormatException {}
+            sendingToNavigator = {
+              "item": widget.itemManager.cacheSave(
+                updateVCalendar != null
+                    ? itemUpdatedFromServer
+                    : copyBeforeDelete,
+              ),
+              "icalendar": updateVCalendar != null
+                  ? itemUpdatedFromServer
+                  : copyBeforeDelete,
+              "itemContent": updateVCalendar != null
+                  ? updatedItemContent
+                  : contentBeforeDelete,
+              "itemIsDeleted": (updateVCalendar != null
+                      ? itemUpdatedFromServer
+                      : copyBeforeDelete)
+                  .isDeleted,
+              "itemUid": (updateVCalendar != null
+                      ? itemUpdatedFromServer
+                      : copyBeforeDelete)
+                  .uid,
+              "todo": (updateVCalendar ??
+                      (VComponent.parse(utf8.decode(contentBeforeDelete))
+                          as VCalendar))
+                  .todo!,
             };
             if (context.mounted) {
               await Navigator.maybePop(context, sendingToNavigator);
@@ -1781,7 +1812,7 @@ END:VALARM"""*/
 }
 
 class RevisionItemWrapper {
-  final EtebaseItem revision;
+  final Item revision;
   final DateTime? mtime;
   final String uid;
 

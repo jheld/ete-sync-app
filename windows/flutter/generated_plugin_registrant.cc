@@ -6,22 +6,19 @@
 
 #include "generated_plugin_registrant.h"
 
-#include <etebase_flutter/etebase_flutter_plugin_c_api.h>
 #include <flutter_secure_storage_windows/flutter_secure_storage_windows_plugin.h>
 #include <screen_retriever_windows/screen_retriever_windows_plugin_c_api.h>
-#include <sqlite3_flutter_libs/sqlite3_flutter_libs_plugin.h>
+#include <sodium_libs/sodium_libs_plugin_c_api.h>
 #include <url_launcher_windows/url_launcher_windows.h>
 #include <window_manager/window_manager_plugin.h>
 
 void RegisterPlugins(flutter::PluginRegistry* registry) {
-  EtebaseFlutterPluginCApiRegisterWithRegistrar(
-      registry->GetRegistrarForPlugin("EtebaseFlutterPluginCApi"));
   FlutterSecureStorageWindowsPluginRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("FlutterSecureStorageWindowsPlugin"));
   ScreenRetrieverWindowsPluginCApiRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("ScreenRetrieverWindowsPluginCApi"));
-  Sqlite3FlutterLibsPluginRegisterWithRegistrar(
-      registry->GetRegistrarForPlugin("Sqlite3FlutterLibsPlugin"));
+  SodiumLibsPluginCApiRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("SodiumLibsPluginCApi"));
   UrlLauncherWindowsRegisterWithRegistrar(
       registry->GetRegistrarForPlugin("UrlLauncherWindows"));
   WindowManagerPluginRegisterWithRegistrar(
