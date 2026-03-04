@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:ete_sync_app/l10n/app_localizations.dart';
-import 'package:ete_sync_app/my_home_page.dart';
+import 'my_home_page.dart';
 import 'package:ete_sync_app/util.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';

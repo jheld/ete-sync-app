@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:ffi';
 import 'dart:io';
 import 'package:collection/collection.dart';
 import 'package:enough_icalendar/enough_icalendar.dart';
@@ -108,12 +107,9 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
 
   Future<void> loginValidationSubmit(BuildContext context) async {
     if (_formKey.currentState!.validate()) {
-      final sodium = await SodiumSumoInit.init();
       bool encounteredError = false;
-      final client = Client.create(
-          sodium,
-          "ete_sync_client",
-          serverUrlController.text.isNotEmpty
+      final client = await FlutterClient.create(
+          serverUrl: serverUrlController.text.isNotEmpty
               ? Uri.parse(serverUrlController.text)
               : null);
       late final Account etebase;
