@@ -110,7 +110,7 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
     if (_formKey.currentState!.validate()) {
       final sodium = await SodiumSumoInit.init(
         // replace with wherever libsodium is located on your machine
-        () => DynamicLibrary.open('/usr/lib/x86_64-linux-gnu/libsodium.so'),
+        () => DynamicLibrary.open(sodiumPath()),
       );
 
       bool encounteredError = false;
@@ -161,7 +161,7 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
             value: base64Encode(eteCacheAccountEncryptionValue));
         final sodium = await SodiumSumoInit.init(
           // replace with wherever libsodium is located on your machine
-          () => DynamicLibrary.open('/usr/lib/x86_64-linux-gnu/libsodium.so'),
+          () => DynamicLibrary.open(sodiumPath()),
         );
 
         await cacheClient.saveAccount(etebase,

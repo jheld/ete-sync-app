@@ -25,6 +25,15 @@ Future<String> getCacheDir() async {
   return value;
 }
 
+String sodiumPath() {
+  final ideal = "/app/lib/libsodium.so";
+  if (Directory(File(ideal).parent.toString()).existsSync()) {
+    return ideal;
+  }
+  final fallback = "/usr/lib/x86_64-linux-gnu/libsodium.so";
+  return fallback;
+}
+
 const eteCacheAccountEncryptionKeyString = "eteCacheAccountEncryptionKey";
 
 Future<String> getUsernameInCacheDir() async {
@@ -106,7 +115,7 @@ Future<Client> getEtebaseClient() async {
   final eteBaseUrlRawString = prefs.getString("ete_base_url");
   final sodium = await SodiumSumoInit.init(
     // replace with wherever libsodium is located on your machine
-    () => DynamicLibrary.open('/usr/lib/x86_64-linux-gnu/libsodium.so'),
+    () => DynamicLibrary.open(sodiumPath()),
   );
   final serverUri =
       eteBaseUrlRawString != null ? Uri.tryParse(eteBaseUrlRawString) : null;
@@ -184,7 +193,7 @@ Future<List> getItemManager() async {
   try {
     final sodium = await SodiumSumoInit.init(
       // replace with wherever libsodium is located on your machine
-      () => DynamicLibrary.open('/usr/lib/x86_64-linux-gnu/libsodium.so'),
+      () => DynamicLibrary.open(sodiumPath()),
     );
     etebase = await cacheClient
         .loadAccount(SecureKey.fromList(sodium, eteCacheAccountEncryptionKey!));
@@ -401,7 +410,7 @@ Future<UtilItemListResponse> getItemListResponse(
       as Uint8List?;
   final sodium = await SodiumSumoInit.init(
     // replace with wherever libsodium is located on your machine
-    () => DynamicLibrary.open('/usr/lib/x86_64-linux-gnu/libsodium.so'),
+    () => DynamicLibrary.open(sodiumPath()),
   );
 
   final etebase = await cacheClient
@@ -627,7 +636,7 @@ Future<CollectionListResponse> getCollections(Client client,
       : null;
   final sodium = await SodiumSumoInit.init(
     // replace with wherever libsodium is located on your machine
-    () => DynamicLibrary.open('/usr/lib/x86_64-linux-gnu/libsodium.so'),
+    () => DynamicLibrary.open(sodiumPath()),
   );
 
   cacheClient = await Cache.create(client, username);
