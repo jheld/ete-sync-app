@@ -931,7 +931,7 @@ packages:
     source: hosted
     version: "3.4.6"
   sodium_libs:
-    dependency: transitive
+    dependency: "direct main"
     description:
       name: sodium_libs
       sha256: f3f9c516b4183226b7a08ca43a765ebc9e02cfd92e46e8a6cc490f98ffe73052

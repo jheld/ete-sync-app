@@ -17,7 +17,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:rrule/rrule.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqlite3/sqlite3.dart';
-import 'package:sodium/sodium_sumo.dart';
+import 'package:sodium_libs/sodium_libs_sumo.dart';
 
 Future<String> getCacheDir() async {
   final value =
@@ -113,10 +113,7 @@ Future<Client> getEtebaseClient() async {
       SharedPreferences.getInstance();
   final SharedPreferences prefs = await prefsInstance;
   final eteBaseUrlRawString = prefs.getString("ete_base_url");
-  final sodium = await SodiumSumoInit.init(
-    // replace with wherever libsodium is located on your machine
-    () => DynamicLibrary.open(sodiumPath()),
-  );
+
   final serverUri =
       eteBaseUrlRawString != null ? Uri.tryParse(eteBaseUrlRawString) : null;
   final client = FlutterClient.create(serverUrl: serverUri);
@@ -191,10 +188,8 @@ Future<List> getItemManager() async {
 
   late final Account etebase;
   try {
-    final sodium = await SodiumSumoInit.init(
-      // replace with wherever libsodium is located on your machine
-      () => DynamicLibrary.open(sodiumPath()),
-    );
+    final sodium = await SodiumSumoInit.init();
+
     etebase = await cacheClient
         .loadAccount(SecureKey.fromList(sodium, eteCacheAccountEncryptionKey!));
   } catch (error) {
@@ -408,10 +403,7 @@ Future<UtilItemListResponse> getItemListResponse(
           .read(key: eteCacheAccountEncryptionKeyString)
           .then((value) => value != null ? base64Decode(value) : value)
       as Uint8List?;
-  final sodium = await SodiumSumoInit.init(
-    // replace with wherever libsodium is located on your machine
-    () => DynamicLibrary.open(sodiumPath()),
-  );
+  final sodium = await SodiumSumoInit.init();
 
   final etebase = await cacheClient
       .loadAccount(SecureKey.fromList(sodium, eteCacheAccountEncryptionKey!));
@@ -634,10 +626,7 @@ Future<CollectionListResponse> getCollections(Client client,
               .then((value) => value != null ? base64Decode(value) : value)
           as Uint8List?
       : null;
-  final sodium = await SodiumSumoInit.init(
-    // replace with wherever libsodium is located on your machine
-    () => DynamicLibrary.open(sodiumPath()),
-  );
+  final sodium = await SodiumSumoInit.init();
 
   cacheClient = await Cache.create(client, username);
   final etebase = etebaseAccount ??
