@@ -24,7 +24,7 @@ import 'package:provider/provider.dart';
 import 'package:rrule/rrule.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqlite3/sqlite3.dart' hide Row;
-import 'package:sodium/sodium_sumo.dart';
+import 'package:sodium_libs/sodium_libs_sumo.dart';
 
 import 'package:window_manager/window_manager.dart';
 
@@ -108,11 +108,7 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
 
   Future<void> loginValidationSubmit(BuildContext context) async {
     if (_formKey.currentState!.validate()) {
-      final sodium = await SodiumSumoInit.init(
-        // replace with wherever libsodium is located on your machine
-        () => DynamicLibrary.open(sodiumPath()),
-      );
-
+      final sodium = await SodiumSumoInit.init();
       bool encounteredError = false;
       final client = Client.create(
           sodium,
@@ -159,10 +155,7 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
         await secureStorage.write(
             key: eteCacheAccountEncryptionKeyString,
             value: base64Encode(eteCacheAccountEncryptionValue));
-        final sodium = await SodiumSumoInit.init(
-          // replace with wherever libsodium is located on your machine
-          () => DynamicLibrary.open(sodiumPath()),
-        );
+        final sodium = await SodiumSumoInit.init();
 
         await cacheClient.saveAccount(etebase,
             SecureKey.fromList(sodium, eteCacheAccountEncryptionValue));
@@ -1154,11 +1147,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
 
               final cacheClient = await Cache.create(
                   widget.client, await getUsernameInCacheDir());
-              final sodium = await SodiumSumoInit.init(
-                // replace with wherever libsodium is located on your machine
-                () => DynamicLibrary.open(
-                    '/usr/lib/x86_64-linux-gnu/libsodium.so'),
-              );
+
+              final sodium = await SodiumSumoInit.init();
               final etebase = await cacheClient.loadAccount(
                   SecureKey.fromList(sodium, eteCacheAccountEncryptionKey!));
 
