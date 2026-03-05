@@ -147,7 +147,7 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
           await Directory(p.join(cacheDir, username)).create();
         }
 
-        Cache cacheClient = await Cache.create(client, username);
+        Cache cacheClient = await Cache.create(client, await getCacheHiveDir());
         const secureStorage = FlutterSecureStorage();
         final eteCacheAccountEncryptionValue =
             client.randombytes(Account.cacheKeyLength);
@@ -193,7 +193,7 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
           final collection = await collectionManager.fetch(collUid);
 
           cacheClient =
-              await Cache.create(widget.client, await getUsernameInCacheDir());
+              await Cache.create(widget.client, await getCacheHiveDir());
 
           await cacheClient.collectionSet(collectionManager, collection);
 
@@ -772,8 +772,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
               onPressed: () async {
                 bool anyWereChanged = false;
 
-                final cacheClient = await Cache.create(
-                    widget.client, await getUsernameInCacheDir());
+                final cacheClient =
+                    await Cache.create(widget.client, await getCacheHiveDir());
 
                 final colUid = await getCollectionUIDInCacheHive(cacheClient);
                 for (var entry in _selectedTasks.entries.toList()) {
@@ -853,7 +853,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                             await itemUpdatedFromServer.getContent();
 
                         final cacheClient = await Cache.create(
-                            widget.client, await getUsernameInCacheDir());
+                            widget.client, await getCacheHiveDir());
                         final colUid =
                             await getCollectionUIDInCacheHive(cacheClient);
                         await cacheClient.itemSet(
@@ -920,8 +920,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
             onPressed: () async {
               bool anyWereChanged = false;
 
-              final cacheClient = await Cache.create(
-                  widget.client, await getUsernameInCacheDir());
+              final cacheClient =
+                  await Cache.create(widget.client, (await getCacheHiveDir()));
 
               final colUid = await getCollectionUIDInCacheHive(cacheClient);
               for (var entry in _selectedTasks.entries.toList()) {
@@ -1000,7 +1000,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                           await itemUpdatedFromServer.getContent();
 
                       final cacheClient = await Cache.create(
-                          widget.client, await getUsernameInCacheDir());
+                          widget.client, await getCacheHiveDir());
                       final colUid =
                           await getCollectionUIDInCacheHive(cacheClient);
                       await cacheClient.itemSet(
@@ -1148,8 +1148,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                           value != null ? base64Decode(value) : value)
                   as Uint8List?;
 
-              final cacheClient = await Cache.create(
-                  widget.client, await getUsernameInCacheDir());
+              final cacheClient =
+                  await Cache.create(widget.client, await getCacheHiveDir());
 
               final sodium = await SodiumSumoInit.init();
               final etebase = await cacheClient.loadAccount(
@@ -1929,7 +1929,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                               eteItem, icalendar!, itemManager, compTodo)
                           .then((value) async {
                         final cacheClient = await Cache.create(
-                            widget.client, await getUsernameInCacheDir());
+                            widget.client, await getCacheHiveDir());
                         final colUid =
                             await getCollectionUIDInCacheHive(cacheClient);
                         await cacheClient.itemSet(itemManager, colUid,
@@ -1986,7 +1986,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                           }
 
                           final cacheClient = await Cache.create(
-                              widget.client, await getUsernameInCacheDir());
+                              widget.client, await getCacheHiveDir());
                           final colUid =
                               await getCollectionUIDInCacheHive(cacheClient);
                           await cacheClient.itemSet(

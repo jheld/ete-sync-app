@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:enough_icalendar/enough_icalendar.dart';
+import 'package:path/path.dart';
 import 'etebase_item_model.dart';
 import 'etebase_note_model.dart';
 import 'i_calendar_custom_parser.dart';
@@ -54,6 +55,10 @@ Future<String> getUsernameInCacheDir() async {
   }
 
   return username;
+}
+
+Future<String> getCacheHiveDir() async {
+  return join((await getApplicationSupportDirectory()).path, "etebase");
 }
 
 String activeCollectionUID(Iterable<FileSystemEntity> collectionUIDNames,
@@ -210,7 +215,7 @@ Future<List> getItemManager() async {
       as Uint8List?;
   //final secureKey = client.randomKey(Account.cacheKeyLength);
 
-  final cacheClient = await Cache.create(client, username);
+  final cacheClient = await Cache.create(client, await getCacheHiveDir());
 
   late final Account etebase;
   try {
@@ -423,7 +428,7 @@ Future<UtilItemListResponse> getItemListResponse(
   final username = await getUsernameInCacheDir();
   final cacheDir = await getCacheDir();
 
-  Cache cacheClient = await Cache.create(client, username);
+  Cache cacheClient = await Cache.create(client, await getCacheHiveDir());
   const secureStorage = FlutterSecureStorage();
 
   final eteCacheAccountEncryptionKey = await secureStorage
@@ -531,7 +536,7 @@ Future<UtilItemListResponse> getItemListResponse(
   }
 
   if (stoken != null) {
-    cacheClient = await Cache.create(client, username);
+    cacheClient = await Cache.create(client, await getCacheHiveDir());
 
     await cacheClient.collectionSaveStoken(colUid, stoken);
   }
@@ -647,7 +652,7 @@ Future<CollectionListResponse> getCollections(Client client,
   final username = await getUsernameInCacheDir();
   final cacheDir = await getCacheDir();
 
-  Cache cacheClient = await Cache.create(client, username);
+  Cache cacheClient = await Cache.create(client, await getCacheHiveDir());
   const secureStorage = FlutterSecureStorage();
 
   final eteCacheAccountEncryptionKey = etebaseAccount == null
@@ -658,7 +663,7 @@ Future<CollectionListResponse> getCollections(Client client,
       : null;
   final sodium = await SodiumSumoInit.init();
 
-  cacheClient = await Cache.create(client, username);
+  cacheClient = await Cache.create(client, await getCacheHiveDir());
 
   final etebase = etebaseAccount ??
       await cacheClient.loadAccount(
@@ -666,7 +671,7 @@ Future<CollectionListResponse> getCollections(Client client,
 
   String? stoken;
   try {
-    Cache cacheClient = await Cache.create(client, username);
+    Cache cacheClient = await Cache.create(client, await getCacheHiveDir());
     stoken = await cacheClient.loadStoken();
   } on NotFound {
     stoken = null;
@@ -688,7 +693,7 @@ Future<CollectionListResponse> getCollections(Client client,
   //     Directory("$cacheDir/$username/cols/").listSync().toList();
 
   for (var cachedItemUID in itemsAtCollPath.map((e) => e.path)) {
-    cacheClient = await Cache.create(client, username);
+    cacheClient = await Cache.create(client, await getCacheHiveDir());
     Collection? itemTry;
     try {
       itemTry = await cacheClient.collectionGet(collManager, cachedItemUID);
@@ -730,7 +735,7 @@ Future<CollectionListResponse> getCollections(Client client,
         }
       }
 
-      cacheClient = await Cache.create(client, username);
+      cacheClient = await Cache.create(client, await getCacheHiveDir());
       await cacheClient.collectionSet(collManager, item);
       theMap["items"][item] = {
         "itemIsDeleted": item.isDeleted,
