@@ -1,12 +1,11 @@
 import 'dart:convert';
-import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
 
 import 'package:enough_icalendar/enough_icalendar.dart';
-import 'package:ete_sync_app/etebase_item_model.dart';
-import 'package:ete_sync_app/etebase_note_model.dart';
-import 'package:ete_sync_app/i_calendar_custom_parser.dart';
+import 'etebase_item_model.dart';
+import 'etebase_note_model.dart';
+import 'i_calendar_custom_parser.dart';
 import 'package:etebase_flutter/etebase_flutter.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -48,15 +47,48 @@ Future<String> getUsernameInCacheDir() async {
   } else if (userNames.isEmpty) {
     throw Exception("No usernames in the cache.");
   } else {
-    throw Exception("More than one username in the cache ${userNames}");
+    throw Exception("More than one username in the cache $userNames");
   }
 
   return username;
 }
 
+String activeCollectionUID(Iterable<FileSystemEntity> collectionUIDNames,
+    String cacheDir, String username) {
+  final activeCollectionFile = File("$cacheDir/$username/.activeCollection");
+  if (activeCollectionFile.existsSync()) {
+    final activeCollectionName =
+        activeCollectionFile.readAsStringSync().replaceAll("\n", "");
+    if (collectionUIDNames
+        .map((e) => e.path.split("/").last)
+        .contains(activeCollectionName)) {
+      return activeCollectionName;
+    } else {
+      throw Exception(
+          "Active collection name in user's cache dir does not exist in the user's collection list in cache.");
+    }
+  }
+  throw Exception("Too many collections to naively pick.");
+}
+
+Future<String> getCollectionUIDInCacheHive(Cache cache) async {
+  final collectionUIDNames = (await (cache.persistedCollectionUids).toList());
+  if (collectionUIDNames.length == 1) {
+    return collectionUIDNames.first;
+  } else {
+    final cacheDir = (await getCacheDir());
+    final username = await getUsernameInCacheDir();
+    return activeCollectionUID(
+        collectionUIDNames.map((element) => Directory(element)),
+        cacheDir,
+        username);
+  }
+}
+
 Future<String> getCollectionUIDInCacheDir() async {
   final cacheDir = (await getCacheDir());
   final username = await getUsernameInCacheDir();
+
   final collectionUIDNames = Directory("$cacheDir/$username/cols/").listSync();
   if (collectionUIDNames.isEmpty) {
     throw Exception("No collections in cache dir.");
@@ -64,20 +96,7 @@ Future<String> getCollectionUIDInCacheDir() async {
   if (collectionUIDNames.length == 1) {
     return collectionUIDNames.first.path.split("/").last;
   } else {
-    final activeCollectionFile = File("$cacheDir/$username/.activeCollection");
-    if (activeCollectionFile.existsSync()) {
-      final activeCollectionName =
-          activeCollectionFile.readAsStringSync().replaceAll("\n", "");
-      if (collectionUIDNames
-          .map((e) => e.path.split("/").last)
-          .contains(activeCollectionName)) {
-        return activeCollectionName;
-      } else {
-        throw Exception(
-            "Active collection name in user's cache dir does not exist in the user's collection list in cache.");
-      }
-    }
-    throw Exception("Too many collections to naively pick.");
+    return activeCollectionUID(collectionUIDNames, cacheDir, username);
   }
 }
 
@@ -206,7 +225,7 @@ Future<List> getItemManager() async {
       cacheDir,
     ];
   }
-  final collUid = await getCollectionUIDInCacheDir();
+  final collUid = await getCollectionUIDInCacheHive(cacheClient);
 
   final collectionManager = etebase.collectionManager;
 
@@ -407,7 +426,7 @@ Future<UtilItemListResponse> getItemListResponse(
 
   final etebase = await cacheClient
       .loadAccount(SecureKey.fromList(sodium, eteCacheAccountEncryptionKey!));
-  final collUid = await getCollectionUIDInCacheDir();
+  final collUid = await getCollectionUIDInCacheHive(cacheClient);
   final collectionManager = etebase.collectionManager;
 
   late final Collection collection;
@@ -629,6 +648,7 @@ Future<CollectionListResponse> getCollections(Client client,
   final sodium = await SodiumSumoInit.init();
 
   cacheClient = await Cache.create(client, username);
+
   final etebase = etebaseAccount ??
       await cacheClient.loadAccount(
           SecureKey.fromList(sodium, eteCacheAccountEncryptionKey!));

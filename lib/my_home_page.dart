@@ -140,21 +140,25 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
         }
         await prefs.setString("username", username);
       }
+      print("after login, encounteredError: $encounteredError");
 
       if (!encounteredError) {
         final cacheDir = await getCacheDir();
 
         Cache cacheClient = await Cache.create(client, username);
         const secureStorage = FlutterSecureStorage();
-        final eteCacheAccountEncryptionValue = client.randombytes(32);
+        final eteCacheAccountEncryptionValue =
+            client.randombytes(Account.cacheKeyLength);
 
         await secureStorage.write(
             key: eteCacheAccountEncryptionKeyString,
             value: base64Encode(eteCacheAccountEncryptionValue));
+        print("wrote to secure storage");
         final sodium = await SodiumSumoInit.init();
 
         await cacheClient.saveAccount(etebase,
             SecureKey.fromList(sodium, eteCacheAccountEncryptionValue));
+        print("cache client save account");
 
         final notesCollectionData = await getCollections(client,
             etebaseAccount: etebase, collectionType: "etebase.md.note");
