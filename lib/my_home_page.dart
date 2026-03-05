@@ -157,10 +157,10 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
             value: base64Encode(eteCacheAccountEncryptionValue));
 
         final sodium = await SodiumSumoInit.init();
-
+        print("about to save account to cache");
         await cacheClient.saveAccount(etebase,
             SecureKey.fromList(sodium, eteCacheAccountEncryptionValue));
-
+        print("saved account to cache");
         final notesCollectionData = await getCollections(client,
             etebaseAccount: etebase, collectionType: "etebase.md.note");
 
