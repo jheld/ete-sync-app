@@ -58,7 +58,10 @@ Future<String> getUsernameInCacheDir() async {
 }
 
 Future<String> getCacheHiveDir() async {
-  return join((await getApplicationSupportDirectory()).path, "etebase");
+  final hiveSubDir =
+      join((await getApplicationDocumentsDirectory()).path, "etebase");
+  //print("hiveSubDir: $hiveSubDir");
+  return hiveSubDir;
 }
 
 String activeCollectionUID(Iterable<FileSystemEntity> collectionUIDNames,

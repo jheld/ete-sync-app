@@ -4,7 +4,7 @@ import 'package:datetime_picker_formfield_new/datetime_picker_formfield.dart';
 import 'package:enough_icalendar/enough_icalendar.dart';
 import 'package:ete_sync_app/i_calendar_custom_parser.dart';
 import 'package:ete_sync_app/l10n/app_localizations.dart';
-import 'package:ete_sync_app/util.dart';
+import 'util.dart';
 import 'package:etebase_flutter/etebase_flutter.dart';
 import 'package:flutter/foundation.dart';
 

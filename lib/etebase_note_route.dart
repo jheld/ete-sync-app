@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:ete_sync_app/l10n/app_localizations.dart';
-import 'package:ete_sync_app/util.dart';
+import 'util.dart';
 import 'package:etebase_flutter/etebase_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
