@@ -702,7 +702,7 @@ END:VALARM""";
             final username = await getUsernameInCacheDir();
 
             final cacheClient = await Cache.create(widget.client, username);
-            final colUid = await getCollectionUIDInCacheDir();
+            final colUid = await getCollectionUIDInCacheHive(cacheClient);
             await cacheClient.itemSet(
                 widget.itemManager, colUid, itemUpdatedFromServer);
             await cacheClient.dispose();
@@ -1688,7 +1688,7 @@ END:VALARM"""*/
             final username = await getUsernameInCacheDir();
 
             final cacheClient = await Cache.create(widget.client, username);
-            final colUid = await getCollectionUIDInCacheDir();
+            final colUid = await getCollectionUIDInCacheHive(cacheClient);
             await cacheClient.itemSet(
                 widget.itemManager, colUid, itemUpdatedFromServer);
             await cacheClient.dispose();
@@ -1764,7 +1764,7 @@ END:VALARM"""*/
             final username = await getUsernameInCacheDir();
 
             final cacheClient = await Cache.create(widget.client, username);
-            final colUid = await getCollectionUIDInCacheDir();
+            final colUid = await getCollectionUIDInCacheHive(cacheClient);
             await cacheClient.itemSet(
                 widget.itemManager, colUid, itemUpdatedFromServer);
             await cacheClient.dispose();
