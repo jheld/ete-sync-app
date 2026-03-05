@@ -4,8 +4,8 @@ import 'dart:io';
 import 'package:collection/collection.dart';
 import 'package:enough_icalendar/enough_icalendar.dart';
 import 'package:ete_sync_app/etebase_item_model.dart';
-import 'package:ete_sync_app/util.dart';
-
+import 'util.dart';
+import 'package:path/path.dart' as p;
 import 'etebase_item_route.dart';
 import 'package:ete_sync_app/etebase_note_model.dart';
 import 'package:ete_sync_app/etebase_note_route.dart';
@@ -140,10 +140,12 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
         }
         await prefs.setString("username", username);
       }
-      print("after login, encounteredError: $encounteredError");
 
       if (!encounteredError) {
         final cacheDir = await getCacheDir();
+        if (!await Directory(p.join(cacheDir, username)).exists()) {
+          await Directory(p.join(cacheDir, username)).create();
+        }
 
         Cache cacheClient = await Cache.create(client, username);
         const secureStorage = FlutterSecureStorage();
@@ -153,12 +155,11 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
         await secureStorage.write(
             key: eteCacheAccountEncryptionKeyString,
             value: base64Encode(eteCacheAccountEncryptionValue));
-        print("wrote to secure storage");
+
         final sodium = await SodiumSumoInit.init();
 
         await cacheClient.saveAccount(etebase,
             SecureKey.fromList(sodium, eteCacheAccountEncryptionValue));
-        print("cache client save account");
 
         final notesCollectionData = await getCollections(client,
             etebaseAccount: etebase, collectionType: "etebase.md.note");

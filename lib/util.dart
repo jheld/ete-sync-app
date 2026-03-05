@@ -21,6 +21,9 @@ import 'package:sodium_libs/sodium_libs_sumo.dart';
 Future<String> getCacheDir() async {
   final value =
       "${(await getApplicationSupportDirectory()).path}/ete_sync_fs_cache";
+  if (!await Directory(value).exists()) {
+    await Directory(value).create();
+  }
   return value;
 }
 
