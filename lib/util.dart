@@ -674,8 +674,10 @@ Future<CollectionListResponse> getCollections(Client client,
 
   bool done = false;
 
-  final itemsAtCollPath =
-      Directory("$cacheDir/$username/cols/").listSync().toList();
+  final itemsAtCollPath = await (cacheClient.persistedCollectionUids
+      .map((element) => Directory(element))).toList();
+  // final itemsAtCollPath =
+  //     Directory("$cacheDir/$username/cols/").listSync().toList();
 
   for (var cachedItemUID in itemsAtCollPath.map((e) => e.path)) {
     cacheClient = await Cache.create(client, username);
