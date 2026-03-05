@@ -449,8 +449,11 @@ Future<UtilItemListResponse> getItemListResponse(
   } on NotFound {
     stoken = null;
   }
-  final itemsAtCollPath =
-      Directory("$cacheDir/$username/cols/$collUid/items").listSync().toList();
+  final itemsAtCollPath = await (cacheClient
+      .persistedItemUids(collUid)
+      .map((element) => File(element))).toList();
+  // final itemsAtCollPath =
+  //     Directory("$cacheDir/$username/cols/$collUid/items").listSync().toList();
 
   theMap["items"] = <Uint8List, Map<String, dynamic>>{};
   // for (var cachedItemUID in itemsAtCollPath.map((e) => e.path)) {

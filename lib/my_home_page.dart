@@ -8,7 +8,7 @@ import 'util.dart';
 import 'package:path/path.dart' as p;
 import 'etebase_item_route.dart';
 import 'package:ete_sync_app/etebase_note_model.dart';
-import 'package:ete_sync_app/etebase_note_route.dart';
+import 'etebase_note_route.dart';
 import 'package:ete_sync_app/i_calendar_custom_parser.dart';
 import 'package:ete_sync_app/l10n/app_localizations.dart';
 import 'package:ete_sync_app/licenses.dart';
