@@ -153,10 +153,12 @@ Future<List> getItemManager() async {
   late final Client client;
   try {
     client = await getEtebaseClient();
-  } on EtebaseException catch (e) {
+  } on Exception catch (e) {
     // very wrong. not sure if there's a corollary in the new code
-    if (e.message == "url_parse") {
-      return [null, null, null, null, serverUri, null, null, db, null, null];
+    if (e is HttpFailure) {
+      if (e.message == "url_parse") {
+        return [null, null, null, null, serverUri, null, null, db, null, null];
+      }
     }
     rethrow;
   }
@@ -172,6 +174,7 @@ Future<List> getItemManager() async {
   final cacheDir = await myReceivePort.first as String;
 
   if (!Directory(cacheDir).existsSync()) {
+    print("cache dir did not exist");
     return [client, null, null, null, serverUri, null, null, db, null, null];
   }
 
@@ -185,7 +188,8 @@ Future<List> getItemManager() async {
       throw Exception("No username in preferences.");
     }
     username = usernameInPref;
-  } catch (error) {
+  } catch (error, stackTrace) {
+    print("no username in preferences or something else, $error, $stackTrace");
     return [
       client,
       null,
@@ -214,7 +218,8 @@ Future<List> getItemManager() async {
 
     etebase = await cacheClient
         .loadAccount(SecureKey.fromList(sodium, eteCacheAccountEncryptionKey!));
-  } catch (error) {
+  } catch (error, stackTrace) {
+    print("could not load etebase from cache, $error, $stackTrace");
     return [
       client,
       null,
