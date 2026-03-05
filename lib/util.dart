@@ -18,6 +18,7 @@ import 'package:rrule/rrule.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:sodium_libs/sodium_libs_sumo.dart';
+import 'package:hive_ce/hive_ce.dart';
 
 Future<String> getCacheDir() async {
   final value =
@@ -182,7 +183,7 @@ Future<List> getItemManager() async {
   final cacheDir = await myReceivePort.first as String;
 
   if (!Directory(cacheDir).existsSync()) {
-    print("cache dir did not exist");
+    //print("cache dir did not exist");
     return [client, null, null, null, serverUri, null, null, db, null, null];
   }
 
@@ -197,7 +198,7 @@ Future<List> getItemManager() async {
     }
     username = usernameInPref;
   } catch (error, stackTrace) {
-    print("no username in preferences or something else, $error, $stackTrace");
+    //print("no username in preferences or something else, $error, $stackTrace");
     return [
       client,
       null,
@@ -227,7 +228,7 @@ Future<List> getItemManager() async {
     etebase = await cacheClient
         .loadAccount(SecureKey.fromList(sodium, eteCacheAccountEncryptionKey!));
   } catch (error, stackTrace) {
-    print("could not load etebase from cache, $error, $stackTrace");
+    //print("could not load etebase from cache, $error, $stackTrace");
     return [
       client,
       null,
@@ -689,9 +690,16 @@ Future<CollectionListResponse> getCollections(Client client,
   theMap["collectionManager"] = collManager;
 
   bool done = false;
-
-  final itemsAtCollPath = await (cacheClient.persistedCollectionUids
-      .map((element) => Directory(element))).toList();
+  List<Directory>? initialItemsAtCollPath;
+  try {
+    initialItemsAtCollPath = await (cacheClient.persistedCollectionUids
+        .map((element) => Directory(element))).toList();
+  } on HiveError {
+    cacheClient = await Cache.create(client, await getCacheHiveDir());
+    initialItemsAtCollPath = await (cacheClient.persistedCollectionUids
+        .map((element) => Directory(element))).toList();
+  }
+  final itemsAtCollPath = initialItemsAtCollPath!;
   // final itemsAtCollPath =
   //     Directory("$cacheDir/$username/cols/").listSync().toList();
 
@@ -752,7 +760,12 @@ Future<CollectionListResponse> getCollections(Client client,
     }
   }
   if (stoken != null) {
-    await cacheClient.saveStoken(stoken);
+    try {
+      await cacheClient.saveStoken(stoken);
+    } on HiveError {
+      cacheClient = await Cache.create(client, await getCacheHiveDir());
+      await cacheClient.saveStoken(stoken);
+    }
   }
 
   theMap["items"] = (theMap["items"] as Map<Collection, Map<String, dynamic>>)

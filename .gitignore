@@ -43,7 +43,11 @@ flatpak/flatpak_generator\ exports/flutter_generator_temp*
 flatpak/flatpak_generator\ exports/.flatpak-builder
 flatpak/flatpak_generator\ exports/repo
 flatpak/.flatpak-builder
-
+flatpak/build
+flatpak/flatpak_generator_exports/
+flatpak/icons/
+flatpak/screenshots/
+flutter_01.png
 
 
 # Symbolication related

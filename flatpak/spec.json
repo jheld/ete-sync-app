@@ -8,7 +8,7 @@
     }
   ],
   "lowercaseAppName": "etesyncapp",
-  "runtimeVersion": "22.08",
+  "runtimeVersion": "24.08",
   "linuxReleaseBundleDirPath": "../build/linux/x64/release/bundle",
   "appDataPath": "com.ete_sync_app.ete_sync_app.appdata.xml",
   "desktopPath": "com.ete_sync_app.ete_sync_app.desktop",
