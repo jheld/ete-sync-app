@@ -1669,10 +1669,10 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     //     itemsFilteredAndSorted.where((test) => test.item == key).isEmpty);
 
     DateTime? lastInPast;
-    DateTime? firstInFuture;
+    // DateTime? firstInFuture;
     if (!todaySearch) {
       lastInPast = null;
-      firstInFuture = null;
+      // firstInFuture = null;
     }
     for (final item in itemsFilteredAndSorted.toList()) {
       VCalendar? icalendar;
@@ -2197,19 +2197,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     await itemClone.setContent(utf8.encode(actualNextTodo.parent!.toString()));
     await itemManager.transaction([itemClone]);
     await eteItem.setContent(await itemClone.getContent());
-    final eteItemFromServer = await itemManager.fetch(eteItem.uid);
-    var contentFromServer = await eteItemFromServer.getContent();
-    final icalendarUpdated =
-        VComponent.parse(utf8.decode(contentFromServer)) as VCalendar;
-    return {
-      "item": itemManager.cacheSave(eteItemFromServer),
-      "itemSentToServer": itemClone,
-      "icalendar": icalendarUpdated,
-      "itemContent": contentFromServer,
-      "todo": icalendarUpdated.todo!,
-      "itemIsDeleted": (eteItemFromServer.isDeleted),
-      "itemUid": (eteItemFromServer.uid),
-    };
+    return await fetchItemFromServerAndReturnMap(
+        itemManager, eteItem, itemClone);
   }
 
   Future<Map<String, dynamic>?> onPressedModifyDueDate(
@@ -2444,15 +2433,21 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     await itemClone.setContent(utf8.encode(actualNextTodo.parent!.toString()));
     await itemManager.transaction([itemClone]);
     await eteItem.setContent(await itemClone.getContent());
+    return await fetchItemFromServerAndReturnMap(
+        itemManager, eteItem, itemClone);
+  }
+
+  Future<Map<String, dynamic>> fetchItemFromServerAndReturnMap(
+      ItemManager itemManager, Item eteItem, Item itemClone) async {
     final eteItemFromServer = await itemManager.fetch(eteItem.uid);
+    var contentFromServer = await eteItemFromServer.getContent();
     final icalendarUpdated =
-        VComponent.parse(utf8.decode(await eteItemFromServer.getContent()))
-            as VCalendar;
+        VComponent.parse(utf8.decode(contentFromServer)) as VCalendar;
     return {
       "item": itemManager.cacheSave(eteItemFromServer),
       "itemSentToServer": itemClone,
       "icalendar": icalendarUpdated,
-      "itemContent": (await eteItemFromServer.getContent()),
+      "itemContent": contentFromServer,
       "todo": icalendarUpdated.todo!,
       "itemIsDeleted": (eteItemFromServer.isDeleted),
       "itemUid": (eteItemFromServer.uid),

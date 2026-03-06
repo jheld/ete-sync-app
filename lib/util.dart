@@ -191,7 +191,10 @@ Future<List> getItemManager() async {
     }
     username = usernameInPref;
   } catch (error, stackTrace) {
-    //print("no username in preferences or something else, $error, $stackTrace");
+    if (kDebugMode) {
+      print(
+          "no username in preferences or something else, $error, $stackTrace");
+    }
     return [
       client,
       null,
@@ -222,7 +225,9 @@ Future<List> getItemManager() async {
     etebase = await cacheClient
         .loadAccount(SecureKey.fromList(sodium, eteCacheAccountEncryptionKey!));
   } catch (error, stackTrace) {
-    //print("could not load etebase from cache, $error, $stackTrace");
+    if (kDebugMode) {
+      print("could not load etebase from cache, $error, $stackTrace");
+    }
     return [
       client,
       null,
@@ -700,7 +705,7 @@ Future<CollectionListResponse> getCollections(Client client,
     initialItemsAtCollPath = await (cacheClient.persistedCollectionUids
         .map((element) => Directory(element))).toList();
   }
-  final itemsAtCollPath = initialItemsAtCollPath!;
+  final itemsAtCollPath = initialItemsAtCollPath;
   // final itemsAtCollPath =
   //     Directory("$cacheDir/$username/cols/").listSync().toList();
 
@@ -709,7 +714,11 @@ Future<CollectionListResponse> getCollections(Client client,
     Collection? itemTry;
     try {
       itemTry = await cacheClient.collectionGet(collManager, cachedItemUID);
-    } on NotFound {}
+    } on NotFound {
+      if (kDebugMode) {
+        print("Cache did not have collection with UID: $cachedItemUID; that is common if the cache isn't full yet.");
+      }
+    }
     final item = itemTry;
     if (item == null) {
       continue;

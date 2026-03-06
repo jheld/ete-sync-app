@@ -98,8 +98,6 @@ class _ItemNoteCreateRouteState extends State<ItemNoteCreateRoute> {
                           final itemUpdatedFromServer =
                               await widget.itemManager.fetch((item.uid));
 
-                          final username = await getUsernameInCacheDir();
-
                           final cacheClient = await Cache.create(
                               widget.client, await getCacheHiveDir());
                           final colUid =
@@ -273,8 +271,6 @@ class _ItemNoteRouteState extends State<ItemNoteRoute> {
             final itemUpdatedFromServer =
                 await widget.itemManager.fetch((widget.item.uid));
 
-            final username = await getUsernameInCacheDir();
-
             final cacheClient =
                 await Cache.create(widget.client, await getCacheHiveDir());
             final colUid = await getCollectionUIDInCacheHive(cacheClient);
@@ -331,8 +327,6 @@ class _ItemNoteRouteState extends State<ItemNoteRoute> {
             });
             final itemUpdatedFromServer =
                 await widget.itemManager.fetch((widget.item.uid));
-
-            final username = await getUsernameInCacheDir();
 
             final cacheClient =
                 await Cache.create(widget.client, await getCacheHiveDir());

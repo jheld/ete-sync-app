@@ -218,7 +218,7 @@ END:VALARM""";
                       },
                       decoration: InputDecoration(
                           labelText: AppLocalizations.of(context)!.priority),
-                      value: _priority,
+                      initialValue: _priority,
                     ),
                     DropdownButtonFormField(
                       items: TodoStatus.values
@@ -242,7 +242,7 @@ END:VALARM""";
                         }
                       },
                       decoration: const InputDecoration(labelText: "Status"),
-                      value: _status,
+                      initialValue: _status,
                     ),
                     DateTimeField(
                       key: _startTimeFieldKey,
@@ -413,7 +413,8 @@ END:VALARM""";
                               child: RRuleGenerator(
                                 config: RRuleGeneratorConfig(),
                                 initialRRule: recurrenceRuleController.text,
-                                textDelegate: const EnglishRRuleTextDelegate(),
+                                localeBuilder: (Locale l) =>
+                                    const EnglishRRuleTextDelegate(),
                                 onChange: (value) {
                                   recurrenceRuleController.text =
                                       value.startsWith("RRULE:")
@@ -466,7 +467,7 @@ END:VALARM""";
                           tooltip: AppLocalizations.of(context)!.clear,
                         ),
                       ),
-                      value: alarmController.text == ""
+                      initialValue: alarmController.text == ""
                           ? EtebaseAlarmTriggerOptions.none
                           : EtebaseAlarmTriggerOptions.end,
                     ),
@@ -699,8 +700,6 @@ END:VALARM""";
             final itemUpdatedFromServer =
                 await widget.itemManager.fetch((item.uid));
 
-            final username = await getUsernameInCacheDir();
-
             final cacheClient =
                 await Cache.create(widget.client, await getCacheHiveDir());
             final colUid = await getCollectionUIDInCacheHive(cacheClient);
@@ -712,7 +711,7 @@ END:VALARM""";
             final updateVCalendar =
                 VComponent.parse(utf8.decode(updatedItemContent)) as VCalendar;
             final sendingToNavigator = {
-              "item": await widget.itemManager.cacheSave(itemUpdatedFromServer),
+              "item": widget.itemManager.cacheSave(itemUpdatedFromServer),
               "icalendar": itemUpdatedFromServer,
               "itemContent": updatedItemContent,
               "itemIsDeleted": itemUpdatedFromServer.isDeleted,
@@ -1076,7 +1075,7 @@ END:VALARM"""*/
                             VComponent.parse(utf8.decode(updatedItemContent))
                                 as VCalendar;
                         final sendingToNavigator = {
-                          "item": await widget.itemManager
+                          "item": widget.itemManager
                               .cacheSave(itemUpdatedFromServer),
                           "icalendar": itemUpdatedFromServer,
                           "itemContent": updatedItemContent,
@@ -1140,7 +1139,7 @@ END:VALARM"""*/
                         },
                         decoration: InputDecoration(
                             labelText: AppLocalizations.of(context)!.priority),
-                        value: _priority,
+                        initialValue: _priority,
                       ),
                       DropdownButtonFormField(
                         items: TodoStatus.values
@@ -1164,7 +1163,7 @@ END:VALARM"""*/
                           }
                         },
                         decoration: const InputDecoration(labelText: "Status"),
-                        value: _status,
+                        initialValue: _status,
                       ),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -1373,7 +1372,7 @@ END:VALARM"""*/
                                 child: RRuleGenerator(
                                   config: RRuleGeneratorConfig(),
                                   initialRRule: recurrenceRuleController.text,
-                                  textDelegate:
+                                  localeBuilder: (Locale l) =>
                                       const EnglishRRuleTextDelegate(),
                                   onChange: (value) {
                                     recurrenceRuleController.text =
@@ -1428,7 +1427,7 @@ END:VALARM"""*/
                             tooltip: AppLocalizations.of(context)!.clear,
                           ),
                         ),
-                        value: alarmController.text == ""
+                        initialValue: alarmController.text == ""
                             ? EtebaseAlarmTriggerOptions.none
                             : EtebaseAlarmTriggerOptions.end,
                       ),
@@ -1686,8 +1685,6 @@ END:VALARM"""*/
             final itemUpdatedFromServer =
                 await widget.itemManager.fetch(widget.itemMap["itemUid"]);
 
-            final username = await getUsernameInCacheDir();
-
             final cacheClient =
                 await Cache.create(widget.client, await getCacheHiveDir());
             final colUid = await getCollectionUIDInCacheHive(cacheClient);
@@ -1763,8 +1760,6 @@ END:VALARM"""*/
             final itemUpdatedFromServer =
                 await widget.itemManager.fetch((widget.item.uid));
 
-            final username = await getUsernameInCacheDir();
-
             final cacheClient =
                 await Cache.create(widget.client, await getCacheHiveDir());
             final colUid = await getCollectionUIDInCacheHive(cacheClient);
@@ -1779,7 +1774,11 @@ END:VALARM"""*/
               updateVCalendar =
                   VComponent.parse(utf8.decode(updatedItemContent))
                       as VCalendar;
-            } on FormatException {}
+            } on FormatException catch (e, stackTrace) {
+              if (kDebugMode) {
+                print("Had $e,$stackTrace");
+              }
+            }
             sendingToNavigator = {
               "item": widget.itemManager.cacheSave(
                 updateVCalendar != null
