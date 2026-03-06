@@ -615,7 +615,14 @@ void dbRowsInsert(Iterable<MapEntry<Uint8List, ItemListItem>> value,
         element.add(icalendar.todo!.summary);
         element.add(icalendar.todo!.uid);
         element.add(icalendar.todo!.status.name);
-      } catch (e) {
+      } on Exception catch (e, stackTrace) {
+        if (kDebugMode) {
+          if (!e.toString().contains("Invalid input: []")) {
+            print("error caught, $e, $stackTrace");
+            print(element[1]);
+            print(utf8.decode(element[2]));
+          }
+        }
         element.add(null);
         element.add(null);
         element.add(null);

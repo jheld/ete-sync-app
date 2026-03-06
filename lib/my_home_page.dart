@@ -45,10 +45,13 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
 
   final _serverUrlKey = GlobalKey<FormFieldState>();
 
+  bool _loggingIn = false;
+
   @override
   void initState() {
     super.initState();
     serverUrlController.text = widget.serverUri?.toString() ?? "";
+    _loggingIn = false;
   }
 
   @override
@@ -97,15 +100,20 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
                   },
                 ),
                 TextButton(
-                    onPressed: () async {
-                      await loginValidationSubmit(context);
-                    },
+                    onPressed: _loggingIn
+                        ? null
+                        : () async {
+                            await loginValidationSubmit(context);
+                          },
                     child: const Text("Login"))
               ])),
         ]));
   }
 
   Future<void> loginValidationSubmit(BuildContext context) async {
+    setState(() {
+      _loggingIn = true;
+    });
     if (_formKey.currentState!.validate()) {
       bool encounteredError = false;
       final client = await FlutterClient.create(
@@ -116,6 +124,7 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
       late final String username;
       if (!(await client.checkEtebaseServer())) {
         encounteredError = true;
+        _loggingIn = false;
         _formKey.currentState!.reset();
       } else {
         final Future<SharedPreferences> prefsInstance =
@@ -134,6 +143,7 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
             print(e);
           }
           encounteredError = true;
+          _loggingIn = false;
           _formKey.currentState!.reset();
 
           //if (e.code == EtebaseErrorCode.unauthorized) {}
@@ -821,82 +831,75 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                         });
                       });
                     }
-                  } on Exception catch (error, stackTrace) {
+                  } on EtebaseException catch (error, stackTrace) {
                     if (kDebugMode) {
                       print(stackTrace);
                       print(error);
                     }
 
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(error.message),
+                        duration: const Duration(seconds: 5),
+                        action: SnackBarAction(
+                          label: 'OK',
+                          onPressed: () async {
+                            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                          },
+                        ),
+                      ));
+                    }
                     if (error is Conflict) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                          content: Text(error.message),
-                          duration: const Duration(seconds: 5),
-                          action: SnackBarAction(
-                            label: 'OK',
-                            onPressed: () async {
-                              ScaffoldMessenger.of(context)
-                                  .hideCurrentSnackBar();
-                            },
-                          ),
-                        ));
-                      }
-                      if (error is Conflict) {
-                        final itemUpdatedFromServer = await itemManager
-                            .fetch((itemManager.cacheLoad(eteItem)).uid);
-                        final contentFromServer =
-                            await itemUpdatedFromServer.getContent();
+                      final itemUpdatedFromServer = await itemManager
+                          .fetch((itemManager.cacheLoad(eteItem)).uid);
+                      final contentFromServer =
+                          await itemUpdatedFromServer.getContent();
 
-                        final cacheClient = await Cache.create(
-                            widget.client, await getCacheHiveDir());
-                        final colUid =
-                            await getCollectionUIDInCacheHive(cacheClient);
-                        await cacheClient.itemSet(
-                            itemManager, colUid, itemUpdatedFromServer);
-                        await cacheClient.dispose();
+                      final cacheClient = await Cache.create(
+                          widget.client, await getCacheHiveDir());
+                      final colUid =
+                          await getCollectionUIDInCacheHive(cacheClient);
+                      await cacheClient.itemSet(
+                          itemManager, colUid, itemUpdatedFromServer);
+                      await cacheClient.dispose();
 
-                        itemListResponse.items.remove(eteItem);
+                      itemListResponse.items.remove(eteItem);
 
-                        itemListResponse.items[itemManager.cacheSave(
-                          itemUpdatedFromServer,
-                        )] = ItemListItem.fromMap({
-                          "itemContent": contentFromServer,
-                          "itemUid": itemUpdatedFromServer.uid,
-                          "itemIsDeleted": itemUpdatedFromServer.isDeleted,
-                          "itemType":
-                              (await itemUpdatedFromServer.getMeta()).itemType,
-                          "itemName":
-                              (await itemUpdatedFromServer.getMeta()).name,
-                          "mtime":
-                              (await itemUpdatedFromServer.getMeta()).mtime,
-                        });
-                        dbRowsInsert([
-                          MapEntry(
-                              itemManager.cacheSave(
-                                itemUpdatedFromServer,
-                              ),
-                              ItemListItem.fromMap({
-                                "itemContent": contentFromServer,
-                                "itemUid": itemUpdatedFromServer.uid,
-                                "itemIsDeleted":
-                                    itemUpdatedFromServer.isDeleted,
-                                "itemType":
-                                    (await itemUpdatedFromServer.getMeta())
-                                        .itemType,
-                                "itemName":
-                                    (await itemUpdatedFromServer.getMeta())
-                                        .name,
-                                "mtime": (await itemUpdatedFromServer.getMeta())
-                                    .mtime,
-                              }))
-                        ], widget.db, widget.colType);
-                        itemListResponse.items.clear();
-                        setState(() {
-                          _itemListResponse =
-                              Future<UtilItemListResponse>.value(
-                                  itemListResponse);
-                        });
-                      }
+                      itemListResponse.items[itemManager.cacheSave(
+                        itemUpdatedFromServer,
+                      )] = ItemListItem.fromMap({
+                        "itemContent": contentFromServer,
+                        "itemUid": itemUpdatedFromServer.uid,
+                        "itemIsDeleted": itemUpdatedFromServer.isDeleted,
+                        "itemType":
+                            (await itemUpdatedFromServer.getMeta()).itemType,
+                        "itemName":
+                            (await itemUpdatedFromServer.getMeta()).name,
+                        "mtime": (await itemUpdatedFromServer.getMeta()).mtime,
+                      });
+                      dbRowsInsert([
+                        MapEntry(
+                            itemManager.cacheSave(
+                              itemUpdatedFromServer,
+                            ),
+                            ItemListItem.fromMap({
+                              "itemContent": contentFromServer,
+                              "itemUid": itemUpdatedFromServer.uid,
+                              "itemIsDeleted": itemUpdatedFromServer.isDeleted,
+                              "itemType":
+                                  (await itemUpdatedFromServer.getMeta())
+                                      .itemType,
+                              "itemName":
+                                  (await itemUpdatedFromServer.getMeta()).name,
+                              "mtime":
+                                  (await itemUpdatedFromServer.getMeta()).mtime,
+                            }))
+                      ], widget.db, widget.colType);
+                      itemListResponse.items.clear();
+                      setState(() {
+                        _itemListResponse = Future<UtilItemListResponse>.value(
+                            itemListResponse);
+                      });
                     }
                   }
                 }
@@ -969,75 +972,71 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                       });
                     });
                   }
-                } on Exception catch (error, stackTrace) {
+                } on EtebaseException catch (error, stackTrace) {
                   if (kDebugMode) {
                     print(stackTrace);
                     print(error);
                   }
 
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text(error.message),
+                      duration: const Duration(seconds: 5),
+                      action: SnackBarAction(
+                        label: 'OK',
+                        onPressed: () async {
+                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                        },
+                      ),
+                    ));
+                  }
                   if (error is Conflict) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text(error.message),
-                        duration: const Duration(seconds: 5),
-                        action: SnackBarAction(
-                          label: 'OK',
-                          onPressed: () async {
-                            ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                          },
-                        ),
-                      ));
-                    }
-                    if (error is Conflict) {
-                      final itemUpdatedFromServer = await itemManager
-                          .fetch((itemManager.cacheLoad(eteItem)).uid);
-                      final contentFromServer =
-                          await itemUpdatedFromServer.getContent();
+                    final itemUpdatedFromServer = await itemManager
+                        .fetch((itemManager.cacheLoad(eteItem)).uid);
+                    final contentFromServer =
+                        await itemUpdatedFromServer.getContent();
 
-                      final cacheClient = await Cache.create(
-                          widget.client, await getCacheHiveDir());
-                      final colUid =
-                          await getCollectionUIDInCacheHive(cacheClient);
-                      await cacheClient.itemSet(
-                          itemManager, colUid, itemUpdatedFromServer);
-                      await cacheClient.dispose();
+                    final cacheClient = await Cache.create(
+                        widget.client, await getCacheHiveDir());
+                    final colUid =
+                        await getCollectionUIDInCacheHive(cacheClient);
+                    await cacheClient.itemSet(
+                        itemManager, colUid, itemUpdatedFromServer);
+                    await cacheClient.dispose();
 
-                      itemListResponse.items.remove(eteItem);
+                    itemListResponse.items.remove(eteItem);
 
-                      itemListResponse.items[itemManager.cacheSave(
-                        itemUpdatedFromServer,
-                      )] = ItemListItem.fromMap({
-                        "itemContent": contentFromServer,
-                        "itemUid": itemUpdatedFromServer.uid,
-                        "itemIsDeleted": itemUpdatedFromServer.isDeleted,
-                        "itemType":
-                            (await itemUpdatedFromServer.getMeta()).itemType,
-                        "itemName":
-                            (await itemUpdatedFromServer.getMeta()).name,
-                        "mtime": (await itemUpdatedFromServer.getMeta()).mtime,
-                      });
-                      dbRowsInsert([
-                        MapEntry(
-                            itemManager.cacheSave(itemUpdatedFromServer),
-                            ItemListItem.fromMap({
-                              "itemContent": contentFromServer,
-                              "itemUid": itemUpdatedFromServer.uid,
-                              "itemIsDeleted": itemUpdatedFromServer.isDeleted,
-                              "itemType":
-                                  (await itemUpdatedFromServer.getMeta())
-                                      .itemType,
-                              "itemName":
-                                  (await itemUpdatedFromServer.getMeta()).name,
-                              "mtime":
-                                  (await itemUpdatedFromServer.getMeta()).mtime,
-                            }))
-                      ], widget.db, widget.colType);
-                      itemListResponse.items.clear();
-                      setState(() {
-                        _itemListResponse = Future<UtilItemListResponse>.value(
-                            itemListResponse);
-                      });
-                    }
+                    itemListResponse.items[itemManager.cacheSave(
+                      itemUpdatedFromServer,
+                    )] = ItemListItem.fromMap({
+                      "itemContent": contentFromServer,
+                      "itemUid": itemUpdatedFromServer.uid,
+                      "itemIsDeleted": itemUpdatedFromServer.isDeleted,
+                      "itemType":
+                          (await itemUpdatedFromServer.getMeta()).itemType,
+                      "itemName": (await itemUpdatedFromServer.getMeta()).name,
+                      "mtime": (await itemUpdatedFromServer.getMeta()).mtime,
+                    });
+                    dbRowsInsert([
+                      MapEntry(
+                          itemManager.cacheSave(itemUpdatedFromServer),
+                          ItemListItem.fromMap({
+                            "itemContent": contentFromServer,
+                            "itemUid": itemUpdatedFromServer.uid,
+                            "itemIsDeleted": itemUpdatedFromServer.isDeleted,
+                            "itemType": (await itemUpdatedFromServer.getMeta())
+                                .itemType,
+                            "itemName":
+                                (await itemUpdatedFromServer.getMeta()).name,
+                            "mtime":
+                                (await itemUpdatedFromServer.getMeta()).mtime,
+                          }))
+                    ], widget.db, widget.colType);
+                    itemListResponse.items.clear();
+                    setState(() {
+                      _itemListResponse =
+                          Future<UtilItemListResponse>.value(itemListResponse);
+                    });
                   }
                 }
               }
