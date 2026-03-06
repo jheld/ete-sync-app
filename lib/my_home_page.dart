@@ -147,20 +147,17 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
           await Directory(p.join(cacheDir, username)).create();
         }
 
-        Cache cacheClient = await Cache.create(client, await getCacheHiveDir());
+        Cache cacheClient = await getCacheClient(client);
         const secureStorage = FlutterSecureStorage();
         final eteCacheAccountEncryptionValue =
-            client.randombytes(Account.cacheKeyLength);
+            client.randomKey(Account.cacheKeyLength);
 
         await secureStorage.write(
             key: eteCacheAccountEncryptionKeyString,
-            value: base64Encode(eteCacheAccountEncryptionValue));
+            value: base64Encode(eteCacheAccountEncryptionValue.extractBytes()));
 
-        final sodium = await SodiumSumoInit.init();
-        print("about to save account to cache");
-        await cacheClient.saveAccount(etebase,
-            SecureKey.fromList(sodium, eteCacheAccountEncryptionValue));
-        print("saved account to cache");
+        await cacheClient.saveAccount(etebase, eteCacheAccountEncryptionValue);
+
         final notesCollectionData = await getCollections(client,
             etebaseAccount: etebase, collectionType: "etebase.md.note");
 
@@ -192,8 +189,7 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
           final collectionManager = etebase.collectionManager;
           final collection = await collectionManager.fetch(collUid);
 
-          cacheClient =
-              await Cache.create(widget.client, await getCacheHiveDir());
+          cacheClient = await getCacheClient(widget.client);
 
           await cacheClient.collectionSet(collectionManager, collection);
 
@@ -772,8 +768,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
               onPressed: () async {
                 bool anyWereChanged = false;
 
-                final cacheClient =
-                    await Cache.create(widget.client, await getCacheHiveDir());
+                final cacheClient = await getCacheClient(widget.client);
 
                 final colUid = await getCollectionUIDInCacheHive(cacheClient);
                 for (var entry in _selectedTasks.entries.toList()) {
@@ -1148,8 +1143,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                           value != null ? base64Decode(value) : value)
                   as Uint8List?;
 
-              final cacheClient =
-                  await Cache.create(widget.client, await getCacheHiveDir());
+              final cacheClient = await getCacheClient(widget.client);
 
               final sodium = await SodiumSumoInit.init();
               final etebase = await cacheClient.loadAccount(

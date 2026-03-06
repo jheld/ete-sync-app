@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:isolate';
 
 import 'package:enough_icalendar/enough_icalendar.dart';
 import 'package:path/path.dart';
@@ -10,7 +9,6 @@ import 'i_calendar_custom_parser.dart';
 import 'package:etebase_flutter/etebase_flutter.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
@@ -63,6 +61,10 @@ Future<String> getCacheHiveDir() async {
       join((await getApplicationDocumentsDirectory()).path, "etebase");
   //print("hiveSubDir: $hiveSubDir");
   return hiveSubDir;
+}
+
+Future<Cache> getCacheClient(Client client) async {
+  return await Cache.create(client, await getCacheHiveDir());
 }
 
 String activeCollectionUID(Iterable<FileSystemEntity> collectionUIDNames,
@@ -171,18 +173,9 @@ Future<List> getItemManager() async {
     }
     rethrow;
   }
-  ReceivePort myReceivePort = ReceivePort();
-  RootIsolateToken rootIsolateToken = RootIsolateToken.instance!;
-  await Isolate.spawn<List>((args) async {
-    final SendPort mySendPort = args[0];
-    final RootIsolateToken rootIsolateToken = args[1];
-    BackgroundIsolateBinaryMessenger.ensureInitialized(rootIsolateToken);
-    final cacheDir = await getCacheDir();
-    mySendPort.send(cacheDir);
-  }, [myReceivePort.sendPort, rootIsolateToken]);
-  final cacheDir = await myReceivePort.first as String;
+  final cacheDir = await getCacheDir();
 
-  if (!Directory(cacheDir).existsSync()) {
+  if (!await Directory(cacheDir).exists()) {
     //print("cache dir did not exist");
     return [client, null, null, null, serverUri, null, null, db, null, null];
   }
@@ -217,9 +210,10 @@ Future<List> getItemManager() async {
           .read(key: eteCacheAccountEncryptionKeyString)
           .then((value) => value != null ? base64Decode(value) : value)
       as Uint8List?;
+
   //final secureKey = client.randomKey(Account.cacheKeyLength);
 
-  final cacheClient = await Cache.create(client, await getCacheHiveDir());
+  final cacheClient = await getCacheClient(client);
 
   late final Account etebase;
   try {
@@ -432,7 +426,7 @@ Future<UtilItemListResponse> getItemListResponse(
   final username = await getUsernameInCacheDir();
   final cacheDir = await getCacheDir();
 
-  Cache cacheClient = await Cache.create(client, await getCacheHiveDir());
+  Cache cacheClient = await getCacheClient(client);
   const secureStorage = FlutterSecureStorage();
 
   final eteCacheAccountEncryptionKey = await secureStorage
@@ -540,7 +534,7 @@ Future<UtilItemListResponse> getItemListResponse(
   }
 
   if (stoken != null) {
-    cacheClient = await Cache.create(client, await getCacheHiveDir());
+    cacheClient = await getCacheClient(client);
 
     await cacheClient.collectionSaveStoken(colUid, stoken);
   }
@@ -656,7 +650,7 @@ Future<CollectionListResponse> getCollections(Client client,
   final username = await getUsernameInCacheDir();
   final cacheDir = await getCacheDir();
 
-  Cache cacheClient = await Cache.create(client, await getCacheHiveDir());
+  Cache cacheClient = await getCacheClient(client);
   const secureStorage = FlutterSecureStorage();
 
   final eteCacheAccountEncryptionKey = etebaseAccount == null
@@ -667,7 +661,7 @@ Future<CollectionListResponse> getCollections(Client client,
       : null;
   final sodium = await SodiumSumoInit.init();
 
-  cacheClient = await Cache.create(client, await getCacheHiveDir());
+  cacheClient = await getCacheClient(client);
 
   final etebase = etebaseAccount ??
       await cacheClient.loadAccount(
@@ -675,7 +669,7 @@ Future<CollectionListResponse> getCollections(Client client,
 
   String? stoken;
   try {
-    Cache cacheClient = await Cache.create(client, await getCacheHiveDir());
+    Cache cacheClient = await getCacheClient(client);
     stoken = await cacheClient.loadStoken();
   } on NotFound {
     stoken = null;
@@ -695,7 +689,7 @@ Future<CollectionListResponse> getCollections(Client client,
     initialItemsAtCollPath = await (cacheClient.persistedCollectionUids
         .map((element) => Directory(element))).toList();
   } on HiveError {
-    cacheClient = await Cache.create(client, await getCacheHiveDir());
+    cacheClient = await getCacheClient(client);
     initialItemsAtCollPath = await (cacheClient.persistedCollectionUids
         .map((element) => Directory(element))).toList();
   }
@@ -704,7 +698,7 @@ Future<CollectionListResponse> getCollections(Client client,
   //     Directory("$cacheDir/$username/cols/").listSync().toList();
 
   for (var cachedItemUID in itemsAtCollPath.map((e) => e.path)) {
-    cacheClient = await Cache.create(client, await getCacheHiveDir());
+    cacheClient = await getCacheClient(client);
     Collection? itemTry;
     try {
       itemTry = await cacheClient.collectionGet(collManager, cachedItemUID);
@@ -746,7 +740,7 @@ Future<CollectionListResponse> getCollections(Client client,
         }
       }
 
-      cacheClient = await Cache.create(client, await getCacheHiveDir());
+      cacheClient = await getCacheClient(client);
       await cacheClient.collectionSet(collManager, item);
       theMap["items"][item] = {
         "itemIsDeleted": item.isDeleted,
@@ -763,7 +757,7 @@ Future<CollectionListResponse> getCollections(Client client,
     try {
       await cacheClient.saveStoken(stoken);
     } on HiveError {
-      cacheClient = await Cache.create(client, await getCacheHiveDir());
+      cacheClient = await getCacheClient(client);
       await cacheClient.saveStoken(stoken);
     }
   }
