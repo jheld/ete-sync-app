@@ -1156,6 +1156,9 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                     widget.db.prepare("drop table if exists $element;");
                 stmt.execute([]);
                 stmt.close();
+                final vacuumStmt = widget.db.prepare("VACUUM;");
+                vacuumStmt.execute([]);
+                vacuumStmt.close();
               }
 
               if (context.mounted) {
