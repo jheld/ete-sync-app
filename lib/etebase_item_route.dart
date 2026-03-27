@@ -1024,23 +1024,27 @@ END:VALARM"""*/
                     bool done = false;
                     final eteItemRevisionList = <RevisionItemWrapper>[];
                     String? revisionIteratorValue;
+                    try {
+                      while (!done) {
+                        final itemRevisionListResponse =
+                            await widget.itemManager.itemRevisions(
+                                widget.item,
+                                RevisionFetchOptions(
+                                  iterator: revisionIteratorValue,
+                                ));
+                        for (var element in itemRevisionListResponse.data) {
+                          eteItemRevisionList.add(RevisionItemWrapper(
+                              revision: element,
+                              uid: element.uid,
+                              mtime: (await element.getMeta()).mtime));
+                        }
 
-                    while (!done) {
-                      final itemRevisionListResponse =
-                          await widget.itemManager.itemRevisions(
-                              widget.item,
-                              RevisionFetchOptions(
-                                iterator: revisionIteratorValue,
-                              ));
-                      for (var element in itemRevisionListResponse.data) {
-                        eteItemRevisionList.add(RevisionItemWrapper(
-                            revision: element,
-                            uid: element.uid,
-                            mtime: (await element.getMeta()).mtime));
+                        revisionIteratorValue =
+                            itemRevisionListResponse.iterator;
+                        done = itemRevisionListResponse.isDone;
                       }
-
-                      revisionIteratorValue = itemRevisionListResponse.iterator;
-                      done = itemRevisionListResponse.isDone;
+                    } on NotFound catch (e) {
+                      return;
                     }
 
                     if (context.mounted) {
@@ -1750,10 +1754,28 @@ END:VALARM"""*/
           if (action == "OK") {
             final contentBeforeDelete = await widget.item.getContent();
 
-            final copyBeforeDelete = await widget.itemManager.create(
-                await widget.item.getMeta(), await widget.item.getContent());
+            final copyBeforeDelete = widget.itemManager
+                .cacheLoad(widget.itemManager.cacheSave(widget.item));
             await widget.item.delete();
-            await widget.itemManager.transaction([widget.item]);
+            try {
+              await widget.itemManager.transaction([widget.item]);
+            } on ServerProblem catch (e, stackTrace) {
+              if (kDebugMode) {
+                print("Error, $e, $stackTrace");
+              }
+              try {
+                await widget.itemManager.fetch((widget.item.uid));
+              } on ServerProblem catch (e) {
+                final cacheClient =
+                    await Cache.create(widget.client, await getCacheHiveDir());
+                final colUid = await getCollectionUIDInCacheHive(cacheClient);
+                await cacheClient.itemUnset(colUid, widget.item.uid);
+                if (context.mounted) {
+                  await Navigator.maybePop(context, null);
+                }
+              }
+              return;
+            }
             setState(() {
               wasEdited = true;
             });
@@ -1768,7 +1790,7 @@ END:VALARM"""*/
             await cacheClient.dispose();
 
             final updatedItemContent = await itemUpdatedFromServer.getContent();
-            Map sendingToNavigator = {};
+            Map<String, Object> sendingToNavigator = {};
             VCalendar? updateVCalendar;
             try {
               updateVCalendar =

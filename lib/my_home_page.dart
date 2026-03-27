@@ -2208,8 +2208,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       VTodo compTodo,
       BuildContext context) async {
     final eteItem = itemManager.cacheLoad(byteBuffer);
-    final itemClone = await itemManager.create(
-        await eteItem.getMeta(), await eteItem.getContent());
+    final itemClone =
+        widget.itemManager.cacheLoad(widget.itemManager.cacheSave(eteItem));
     final todoComp = compTodo;
     bool sequenceChange = false;
     final changedStatus = todoComp.status;
@@ -2318,8 +2318,10 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
 
     await itemClone.setContent(utf8.encode(actualNextTodo.parent!.toString()));
     await itemManager.transaction([itemClone]);
-    await eteItem.setContent(await itemClone.getContent());
+
     final eteItemFromServer = await itemManager.fetch(eteItem.uid);
+
+    await eteItem.setContent(await eteItemFromServer.getContent());
     final icalendarUpdated =
         VComponent.parse(utf8.decode(await eteItemFromServer.getContent()))
             as VCalendar;
@@ -2341,8 +2343,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       VTodo compTodo,
       BuildContext context) async {
     final eteItem = itemManager.cacheLoad(byteBuffer);
-    final itemClone = await itemManager.create(
-        await eteItem.getMeta(), await eteItem.getContent());
+    final itemClone =
+        widget.itemManager.cacheLoad(widget.itemManager.cacheSave(eteItem));
     final todoComp = compTodo;
     bool sequenceChange = false;
     final changedStatus = todoComp.status;
@@ -2432,7 +2434,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
 
     await itemClone.setContent(utf8.encode(actualNextTodo.parent!.toString()));
     await itemManager.transaction([itemClone]);
-    await eteItem.setContent(await itemClone.getContent());
+    final eteItemFromServer = await itemManager.fetch(eteItem.uid);
+    await eteItem.setContent(await eteItemFromServer.getContent());
     return await fetchItemFromServerAndReturnMap(
         itemManager, eteItem, itemClone);
   }
