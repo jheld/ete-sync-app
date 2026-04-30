@@ -27,6 +27,76 @@ import 'package:sodium_libs/sodium_libs_sumo.dart';
 
 import 'package:window_manager/window_manager.dart';
 
+class ChangePasswordModal extends StatefulWidget {
+  const ChangePasswordModal({super.key, required this.account});
+
+  @override
+  _ChangePasswordModalState createState() => _ChangePasswordModalState();
+
+  final Account account;
+}
+
+class _ChangePasswordModalState extends State<ChangePasswordModal> {
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  final TextEditingController _newPasswordController = TextEditingController();
+
+  void _changePassword() async {
+    if (_formKey.currentState!.validate()) {
+      await widget.account.changePassword(_newPasswordController.text);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Password changed successfully')));
+      Navigator.pop(context);
+    }
+  }
+
+  @override
+  void dispose() {
+    _newPasswordController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Change Password'),
+      content: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            TextFormField(
+              controller: _newPasswordController,
+              decoration: InputDecoration(labelText: 'New Password'),
+              obscureText: true,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Please enter a new password';
+                }
+                return null;
+              },
+            ),
+          ],
+        ),
+      ),
+      actions: <Widget>[
+        TextButton(
+          child: Text('Cancel'),
+          onPressed: () {
+            Navigator.pop(context);
+          },
+        ),
+        TextButton(
+          child: Text('Change Password'),
+          onPressed: () async {
+            _changePassword();
+          },
+        ),
+      ],
+    );
+  }
+}
+
 class AccountLoadPage extends StatefulWidget {
   const AccountLoadPage({super.key, required this.client, this.serverUri});
 
@@ -57,11 +127,13 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-        appBar: AppBar(),
-        body: Column(children: [
+      appBar: AppBar(),
+      body: Column(
+        children: [
           Form(
-              key: _formKey,
-              child: Column(children: [
+            key: _formKey,
+            child: Column(
+              children: [
                 TextFormField(
                   key: _serverUrlKey,
                   controller: serverUrlController,
@@ -100,14 +172,19 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
                   },
                 ),
                 TextButton(
-                    onPressed: _loggingIn
-                        ? null
-                        : () async {
-                            await loginValidationSubmit(context);
-                          },
-                    child: const Text("Login"))
-              ])),
-        ]));
+                  onPressed: _loggingIn
+                      ? null
+                      : () async {
+                          await loginValidationSubmit(context);
+                        },
+                  child: const Text("Login"),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> loginValidationSubmit(BuildContext context) async {
@@ -117,9 +194,10 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
     if (_formKey.currentState!.validate()) {
       bool encounteredError = false;
       final client = await FlutterClient.create(
-          serverUrl: serverUrlController.text.isNotEmpty
-              ? Uri.parse(serverUrlController.text)
-              : null);
+        serverUrl: serverUrlController.text.isNotEmpty
+            ? Uri.parse(serverUrlController.text)
+            : null,
+      );
       late final Account etebase;
       late final String username;
       if (!(await client.checkEtebaseServer())) {
@@ -131,13 +209,18 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
             SharedPreferences.getInstance();
         final SharedPreferences prefs = await prefsInstance;
         await prefs.setString(
-            "ete_base_url", Uri.parse(serverUrlController.text).toString());
+          "ete_base_url",
+          Uri.parse(serverUrlController.text).toString(),
+        );
 
         //final client = widget.client;
         username = usernameController.text;
         try {
-          etebase =
-              await Account.login(client, username, passwordController.text);
+          etebase = await Account.login(
+            client,
+            username,
+            passwordController.text,
+          );
         } on EtebaseException catch (e) {
           if (kDebugMode) {
             print(e);
@@ -145,7 +228,11 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
           encounteredError = true;
           _loggingIn = false;
           _formKey.currentState!.reset();
-
+          if (e is Unauthorized) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text(e.message)));
+          }
           //if (e.code == EtebaseErrorCode.unauthorized) {}
         }
         await prefs.setString("username", username);
@@ -159,40 +246,56 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
 
         Cache cacheClient = await getCacheClient(client);
         const secureStorage = FlutterSecureStorage();
-        final eteCacheAccountEncryptionValue =
-            client.randomKey(Account.cacheKeyLength);
+        final eteCacheAccountEncryptionValue = client.randomKey(
+          Account.cacheKeyLength,
+        );
 
         await secureStorage.write(
-            key: eteCacheAccountEncryptionKeyString,
-            value: base64Encode(eteCacheAccountEncryptionValue.extractBytes()));
+          key: eteCacheAccountEncryptionKeyString,
+          value: base64Encode(eteCacheAccountEncryptionValue.extractBytes()),
+        );
 
         await cacheClient.saveAccount(etebase, eteCacheAccountEncryptionValue);
 
-        final notesCollectionData = await getCollections(client,
-            etebaseAccount: etebase, collectionType: "etebase.md.note");
+        final notesCollectionData = await getCollections(
+          client,
+          etebaseAccount: etebase,
+          collectionType: "etebase.md.note",
+        );
 
-        final collectionMap =
-            await getCollections(client, etebaseAccount: etebase);
+        final collectionMap = await getCollections(
+          client,
+          etebaseAccount: etebase,
+        );
 
         (collectionMap.items as Map).addAll(notesCollectionData.items);
         if (collectionMap.items.isEmpty) {
           await etebase.logout();
         } else if (context.mounted) {
           final collectionData = await showDialog(
-              context: context,
-              barrierDismissible: false,
-              builder: (BuildContext context) {
-                return Dialog(
-                  child: Column(
-                      children: (collectionMap.items.map(
-                              (key, value) => MapEntry(key, value.toMap())))
-                          .values
-                          .where((element) => !element["itemIsDeleted"])
-                          .map((element) => buildCollectionListTile(
-                              element, cacheDir, username, context))
-                          .toList()),
-                );
-              });
+            context: context,
+            barrierDismissible: false,
+            builder: (BuildContext context) {
+              return Dialog(
+                child: Column(
+                  children: (collectionMap.items.map(
+                    (key, value) => MapEntry(key, value.toMap()),
+                  ))
+                      .values
+                      .where((element) => !element["itemIsDeleted"])
+                      .map(
+                        (element) => buildCollectionListTile(
+                          element,
+                          cacheDir,
+                          username,
+                          context,
+                        ),
+                      )
+                      .toList(),
+                ),
+              );
+            },
+          );
 
           final collUid = collectionData["itemUid"];
           final colType = collectionData["itemCollectionType"] as String;
@@ -209,18 +312,20 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
           if (context.mounted) {
             final db = sqlite3.open(dbFilePathStr);
             await Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (BuildContext context) => MyHomePage(
-                          title: homePageTitle ?? "My Tasks",
-                          itemManager: itemManager,
-                          client: widget.client,
-                          colUid: collUid,
-                          colType: colType,
-                          db: db,
-                          username: username,
-                          cacheDir: cacheDir,
-                        )));
+              context,
+              MaterialPageRoute(
+                builder: (BuildContext context) => MyHomePage(
+                  title: homePageTitle ?? "My Tasks",
+                  itemManager: itemManager,
+                  client: widget.client,
+                  colUid: collUid,
+                  colType: colType,
+                  db: db,
+                  username: username,
+                  cacheDir: cacheDir,
+                ),
+              ),
+            );
           }
         }
       }
@@ -228,27 +333,43 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
   }
 }
 
-ListTile buildCollectionListTile(Map<String, dynamic> element, String cacheDir,
-    String username, BuildContext context) {
+ListTile buildCollectionListTile(
+  Map<String, dynamic> element,
+  String cacheDir,
+  String username,
+  BuildContext context,
+) {
   return ListTile(
     title: Text(element["itemName"]),
-    leading: Icon(Icons.square,
-        color: element["itemColor"] != null &&
-                (element["itemColor"] as String).isNotEmpty
-            ? Color.fromRGBO(
-                int.parse((element["itemColor"] as String).substring(1, 3),
-                    radix: 16),
-                int.parse((element["itemColor"] as String).substring(3, 5),
-                    radix: 16),
-                int.parse((element["itemColor"] as String).substring(5, 7),
-                    radix: 16),
-                1.0)
-            : Colors.green),
-    trailing:
-        Tooltip(message: element["itemUid"], child: const Icon(Icons.info)),
+    leading: Icon(
+      Icons.square,
+      color: element["itemColor"] != null &&
+              (element["itemColor"] as String).isNotEmpty
+          ? Color.fromRGBO(
+              int.parse(
+                (element["itemColor"] as String).substring(1, 3),
+                radix: 16,
+              ),
+              int.parse(
+                (element["itemColor"] as String).substring(3, 5),
+                radix: 16,
+              ),
+              int.parse(
+                (element["itemColor"] as String).substring(5, 7),
+                radix: 16,
+              ),
+              1.0,
+            )
+          : Colors.green,
+    ),
+    trailing: Tooltip(
+      message: element["itemUid"],
+      child: const Icon(Icons.info),
+    ),
     onTap: () {
-      final activeCollectionFile =
-          File("$cacheDir/$username/.activeCollection");
+      final activeCollectionFile = File(
+        "$cacheDir/$username/.activeCollection",
+      );
       activeCollectionFile.writeAsStringSync(element["itemUid"]);
       Navigator.maybePop(context, element);
     },
@@ -383,17 +504,24 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       // cached based data first, let it be seen on the UI, and then run the gamut with remote fetch.
       // the caveat is that the loader indicator does not show on stage 2.
       _itemListResponse = getItemListResponse(
-              widget.itemManager, widget.client, widget.colUid,
-              cacheOnly: !cacheLoaded, db: widget.db)
-          .then((value) {
+        widget.itemManager,
+        widget.client,
+        widget.colUid,
+        cacheOnly: !cacheLoaded,
+        db: widget.db,
+      ).then((value) {
         value.items.clear();
         setState(() {
           cacheLoaded = true;
         });
 
-        getItemListResponse(widget.itemManager, widget.client, widget.colUid,
-                cacheOnly: !cacheLoaded, db: widget.db)
-            .then((value) {
+        getItemListResponse(
+          widget.itemManager,
+          widget.client,
+          widget.colUid,
+          cacheOnly: !cacheLoaded,
+          db: widget.db,
+        ).then((value) {
           value.items.clear();
           setState(() {
             _itemListResponse = Future.value(value);
@@ -404,10 +532,14 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       });
       /*dateSearchStart = (dateSearchStart ?? DateTime.now())
           .copyWith(hour: 0, minute: 0, second: 0);*/
-      dateSearchEnd = (dateSearchEnd ?? DateTime.now())
-          .copyWith(hour: 23, minute: 59, second: 59);
-      _dateSearchEndController.text =
-          intl.DateFormat("yyyy-MM-dd").format(dateSearchEnd!.toLocal());
+      dateSearchEnd = (dateSearchEnd ?? DateTime.now()).copyWith(
+        hour: 23,
+        minute: 59,
+        second: 59,
+      );
+      _dateSearchEndController.text = intl.DateFormat(
+        "yyyy-MM-dd",
+      ).format(dateSearchEnd!.toLocal());
       // _dateSearchStartController.text =
       //     intl.DateFormat("yyyy-MM-dd").format(dateSearchStart!.toLocal());
       today = DateTime.now();
@@ -419,21 +551,25 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       setState(() {
         today = DateTime.now();
         _itemListResponse = getItemListResponse(
-            widget.itemManager, widget.client, widget.colUid,
-            cacheOnly: !cacheLoaded, db: widget.db);
+          widget.itemManager,
+          widget.client,
+          widget.colUid,
+          cacheOnly: !cacheLoaded,
+          db: widget.db,
+        );
       });
     });
   }
 
-  Future<Map<String, dynamic>> fetchCollections(
-      {List<String> collectionTypes = const [
-        "etebase.vtodo",
-        "etebase.md.note"
-      ]}) async {
+  Future<Map<String, dynamic>> fetchCollections({
+    List<String> collectionTypes = const ["etebase.vtodo", "etebase.md.note"],
+  }) async {
     final Map<String, dynamic> collections = {};
     for (var collectionType in collectionTypes) {
-      final fetchedCollections =
-          (await getCollections(widget.client, collectionType: collectionType));
+      final fetchedCollections = (await getCollections(
+        widget.client,
+        collectionType: collectionType,
+      ));
       for (var collection in fetchedCollections.toMap().entries) {
         if (collection.key == "items" &&
             collections.containsKey(collection.key)) {
@@ -448,11 +584,14 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<LocaleModel>(builder: (context, localeModel, child) {
-      return FutureBuilder<UtilItemListResponse>(
+    return Consumer<LocaleModel>(
+      builder: (context, localeModel, child) {
+        return FutureBuilder<UtilItemListResponse>(
           future: _itemListResponse,
-          builder: (BuildContext context,
-              AsyncSnapshot<UtilItemListResponse?> snapshot) {
+          builder: (
+            BuildContext context,
+            AsyncSnapshot<UtilItemListResponse?> snapshot,
+          ) {
             List<Widget> children = [];
             return Scaffold(
               drawer:
@@ -472,44 +611,59 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                         final itemListResponse = snapshot.data!;
                         refreshTimer?.cancel();
                         await Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                    builder: (BuildContext context) =>
-                                        (widget.colType == "etebase.vtodo"
-                                            ? EtebaseItemCreateRoute(
-                                                itemManager: widget.itemManager,
-                                                client: widget.client)
-                                            : ItemNoteCreateRoute(
-                                                itemManager: widget.itemManager,
-                                                client: widget.client))))
-                            .then((value) {
+                          context,
+                          MaterialPageRoute(
+                            builder: (BuildContext context) =>
+                                (widget.colType == "etebase.vtodo"
+                                    ? EtebaseItemCreateRoute(
+                                        itemManager: widget.itemManager,
+                                        client: widget.client,
+                                      )
+                                    : ItemNoteCreateRoute(
+                                        itemManager: widget.itemManager,
+                                        client: widget.client,
+                                      )),
+                          ),
+                        ).then((value) {
                           if (value != null) {
                             itemListResponse.items[value["item"] as Uint8List] =
-                                ItemListItem.fromMap(value);
+                                ItemListItem.fromMap(
+                              value,
+                            );
 
-                            dbRowsInsert([
-                              MapEntry(value["item"] as Uint8List,
-                                  itemListResponse.items[value["item"]]!)
-                            ], widget.db, widget.colType);
+                            dbRowsInsert(
+                              [
+                                MapEntry(
+                                  value["item"] as Uint8List,
+                                  itemListResponse.items[value["item"]]!,
+                                ),
+                              ],
+                              widget.db,
+                              widget.colType,
+                            );
                             itemListResponse.items.clear();
                             setState(() {
                               _itemListResponse =
                                   Future<UtilItemListResponse>.value(
-                                      itemListResponse);
+                                itemListResponse,
+                              );
                             });
                           }
                         });
-                        refreshTimer =
-                            Timer.periodic(timerRefreshDuration, (timer) {
-                          setState(() {
-                            today = DateTime.now();
-                            _itemListResponse = getItemListResponse(
+                        refreshTimer = Timer.periodic(
+                          timerRefreshDuration,
+                          (timer) {
+                            setState(() {
+                              today = DateTime.now();
+                              _itemListResponse = getItemListResponse(
                                 widget.itemManager,
                                 widget.client,
                                 widget.colUid,
-                                db: widget.db);
-                          });
-                        });
+                                db: widget.db,
+                              );
+                            });
+                          },
+                        );
                       },
                       tooltip: widget.colType == "etebase.vtodo"
                           ? AppLocalizations.of(context)!.createNewTask
@@ -517,76 +671,94 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                       child: const Icon(Icons.add),
                     ),
               body: RefreshIndicator(
-                  key: _refreshIndicatorKey,
-                  onRefresh: () async {
-                    setState(() {
-                      _itemListResponse = getItemListResponse(
-                          widget.itemManager, widget.client, widget.colUid,
-                          db: widget.db);
-                      refreshTimer?.cancel();
-                      refreshTimer =
-                          Timer.periodic(timerRefreshDuration, (timer) {
-                        setState(() {
-                          today = DateTime.now();
-                          _itemListResponse = getItemListResponse(
-                              widget.itemManager, widget.client, widget.colUid,
-                              db: widget.db);
-                        });
+                key: _refreshIndicatorKey,
+                onRefresh: () async {
+                  setState(() {
+                    _itemListResponse = getItemListResponse(
+                      widget.itemManager,
+                      widget.client,
+                      widget.colUid,
+                      db: widget.db,
+                    );
+                    refreshTimer?.cancel();
+                    refreshTimer = Timer.periodic(timerRefreshDuration, (
+                      timer,
+                    ) {
+                      setState(() {
+                        today = DateTime.now();
+                        _itemListResponse = getItemListResponse(
+                          widget.itemManager,
+                          widget.client,
+                          widget.colUid,
+                          db: widget.db,
+                        );
                       });
                     });
-                    return _itemListResponse!.then((value) => null);
-                  },
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Directionality(
-                          textDirection: intl.Bidi.detectRtlDirectionality(
-                                  _searchTextController.text)
-                              ? TextDirection.rtl
-                              : TextDirection.ltr,
-                          child: SearchBar(
-                            controller: _searchTextController,
-                            hintText: AppLocalizations.of(context)!.search,
-                            leading: _searchTextController.text.isEmpty
-                                ? const Icon(Icons.search)
-                                : IconButton(
-                                    icon: const Icon(Icons.close),
-                                    tooltip:
-                                        AppLocalizations.of(context)!.clear,
-                                    onPressed: () async {
-                                      setState(() {
-                                        _searchText = null;
-                                        _searchTextController.text = "";
-                                      });
-                                    },
-                                  ),
-                            onSubmitted: (value) async {
-                              setState(() {
-                                _searchText = value;
-                                _searchTextController.text = value;
-                              });
-                            },
-                            onChanged: (value) async {
-                              setState(() {
-                                _searchText = value;
-                                _searchTextController.text = value;
-                              });
-                            },
-                          )),
-                      buildExpansionTileTaskFinishedFilters(
-                          getDateSelectionWidgets(context)),
-                      buildMainContent(context, snapshot, children),
-                    ],
-                  )),
+                  });
+                  return _itemListResponse!.then((value) => null);
+                },
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Directionality(
+                      textDirection: intl.Bidi.detectRtlDirectionality(
+                        _searchTextController.text,
+                      )
+                          ? TextDirection.rtl
+                          : TextDirection.ltr,
+                      child: SearchBar(
+                        controller: _searchTextController,
+                        hintText: AppLocalizations.of(context)!.search,
+                        leading: _searchTextController.text.isEmpty
+                            ? const Icon(Icons.search)
+                            : IconButton(
+                                icon: const Icon(Icons.close),
+                                tooltip: AppLocalizations.of(
+                                  context,
+                                )!
+                                    .clear,
+                                onPressed: () async {
+                                  setState(() {
+                                    _searchText = null;
+                                    _searchTextController.text = "";
+                                  });
+                                },
+                              ),
+                        onSubmitted: (value) async {
+                          setState(() {
+                            _searchText = value;
+                            _searchTextController.text = value;
+                          });
+                        },
+                        onChanged: (value) async {
+                          setState(() {
+                            _searchText = value;
+                            _searchTextController.text = value;
+                          });
+                        },
+                      ),
+                    ),
+                    buildExpansionTileTaskFinishedFilters(
+                      getDateSelectionWidgets(context),
+                    ),
+                    buildMainContent(context, snapshot, children),
+                  ],
+                ),
+              ),
             );
-          });
-    });
+          },
+        );
+      },
+    );
   }
 
-  Widget buildMainContent(BuildContext context,
-      AsyncSnapshot<UtilItemListResponse?> snapshot, List<Widget> children) {
+  Widget buildMainContent(
+    BuildContext context,
+    AsyncSnapshot<UtilItemListResponse?> snapshot,
+    List<Widget> children,
+  ) {
     if (snapshot.hasData && snapshot.data != null) {
       final itemListResponse = snapshot.data!;
       final itemManager = itemListResponse.itemManager;
@@ -597,28 +769,39 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
           children.addAll(todoItemList(itemManager, itemMap, itemListResponse));
           break;
         case "etebase.md.note":
-          List<Widget> listColumn =
-              noteItemList(itemMap, context, itemManager, itemListResponse);
+          List<Widget> listColumn = noteItemList(
+            itemMap,
+            context,
+            itemManager,
+            itemListResponse,
+          );
 
-          children.add(Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(children: listColumn),
-          ));
+          children.add(
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(children: listColumn),
+            ),
+          );
         default:
-          final colTypeUnsupportedText =
-              Text("Unsupported Collection type ${widget.colType}.");
+          final colTypeUnsupportedText = Text(
+            "Unsupported Collection type ${widget.colType}.",
+          );
           children.add(colTypeUnsupportedText);
       }
     } else {
-      children.add(const Row(
+      children.add(
+        const Row(
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Padding(
-                padding: EdgeInsets.only(right: 24),
-                child: Text("Fetching data")),
-            SizedBox(width: 50, height: 50, child: CircularProgressIndicator())
-          ]));
+              padding: EdgeInsets.only(right: 24),
+              child: Text("Fetching data"),
+            ),
+            SizedBox(width: 50, height: 50, child: CircularProgressIndicator()),
+          ],
+        ),
+      );
       if (snapshot.hasError) {
         children.add(Text(snapshot.error!.toString()));
       }
@@ -629,13 +812,16 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
         Column(
           children: [
             Padding(
-                padding: const EdgeInsets.all(8),
-                child: SizedBox(
-                    //width: 600,
-                    height: MediaQuery.sizeOf(context).height * 0.60,
-                    child: ListView.builder(
-                        itemCount: children.length,
-                        itemBuilder: (context, index) => children[index]))),
+              padding: const EdgeInsets.all(8),
+              child: SizedBox(
+                //width: 600,
+                height: MediaQuery.sizeOf(context).height * 0.60,
+                child: ListView.builder(
+                  itemCount: children.length,
+                  itemBuilder: (context, index) => children[index],
+                ),
+              ),
+            ),
           ],
         ),
       ],
@@ -643,10 +829,11 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
   }
 
   List<Widget> noteItemList(
-      Map<Uint8List, ItemListItem> itemMap,
-      BuildContext context,
-      ItemManager itemManager,
-      UtilItemListResponse itemListResponse) {
+    Map<Uint8List, ItemListItem> itemMap,
+    BuildContext context,
+    ItemManager itemManager,
+    UtilItemListResponse itemListResponse,
+  ) {
     final listColumn = <Widget>[];
     final itemMapEntriesSorted = <MapEntry<Uint8List, ItemListItem>>[];
 
@@ -658,15 +845,22 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       final resultSet = widget.db.select(sqlString, []);
 
       itemListResponseFromDB = UtilItemListResponse(
-          itemManager: widget.itemManager,
-          username: widget.username,
-          cacheDir: widget.cacheDir,
-          items: Map.fromEntries(resultSet
-              .map((row) => MapEntry(
+        itemManager: widget.itemManager,
+        username: widget.username,
+        cacheDir: widget.cacheDir,
+        items: Map.fromEntries(
+          resultSet
+              .map(
+                (row) => MapEntry(
                   base64Decode(row["byteBuffer"]),
                   ItemListItem.fromEtebaseNoteModel(
-                      EtebaseNoteModel.fromMap(row))))
-              .toList()));
+                    EtebaseNoteModel.fromMap(row),
+                  ),
+                ),
+              )
+              .toList(),
+        ),
+      );
 
       itemMap.clear();
       itemMap.addAll(itemListResponseFromDB.items);
@@ -678,16 +872,18 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       }
       itemMapEntriesSorted.add(item);
     }
-    itemMapEntriesSorted.sort((a, b) => (a.value.mtime ??
-            DateTime.fromMillisecondsSinceEpoch(0))
-        .compareTo(b.value.mtime ?? DateTime.fromMillisecondsSinceEpoch(0)));
+    itemMapEntriesSorted.sort(
+      (a, b) => (a.value.mtime ?? DateTime.fromMillisecondsSinceEpoch(0))
+          .compareTo(b.value.mtime ?? DateTime.fromMillisecondsSinceEpoch(0)),
+    );
     for (final MapEntry(key: key, value: value) in itemMapEntriesSorted) {
       final itemContentString = utf8.decode(value.itemContent);
       final textDirection = intl.Bidi.detectRtlDirectionality(itemContentString)
           ? TextDirection.rtl
           : TextDirection.ltr;
 
-      listColumn.add(Container(
+      listColumn.add(
+        Container(
           margin: const EdgeInsets.only(bottom: 8),
           decoration: const BoxDecoration(border: Border(bottom: BorderSide())),
           child: ListTile(
@@ -698,24 +894,32 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                         intl.Bidi.detectRtlDirectionality(value.itemName!)
                             ? TextDirection.rtl
                             : TextDirection.ltr,
-                    child: Text(value.itemName!))
+                    child: Text(value.itemName!),
+                  )
                 : null,
             subtitle: SizedBox(
-                height: 50,
-                child: Directionality(
-                    textDirection: textDirection,
-                    child: Markdown(data: itemContentString))),
+              height: 50,
+              child: Directionality(
+                textDirection: textDirection,
+                child: Markdown(data: itemContentString),
+              ),
+            ),
             onTap: () => onPressedItemNoteWidget(
-                    context, key, itemManager, value.toMap(), widget.client)
-                .then((value) {
+              context,
+              key,
+              itemManager,
+              value.toMap(),
+              widget.client,
+            ).then((value) {
               if (value != null) {
                 itemListResponse.items.remove(key);
 
                 itemListResponse.items[value["item"]] =
                     ItemListItem.fromMap(value);
                 setState(() {
-                  _itemListResponse =
-                      Future<UtilItemListResponse>.value(itemListResponse);
+                  _itemListResponse = Future<UtilItemListResponse>.value(
+                    itemListResponse,
+                  );
                 });
                 //_refreshIndicatorKey.currentState?.show();
               } else {
@@ -724,202 +928,73 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
               });*/
               }
             }),
-          )));
+          ),
+        ),
+      );
       //listColumn.add(Text(utf8.decode(item.value.itemContent)));
     }
     return listColumn;
   }
 
   ExpansionTile buildExpansionTileTaskFinishedFilters(
-      List<Widget> dateSelectionWidgets) {
+    List<Widget> dateSelectionWidgets,
+  ) {
     return ExpansionTile(
-        title: Text(AppLocalizations.of(context)!.filters),
-        children: [
-          Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: dateSelectionWidgets),
-          Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
+      title: Text(AppLocalizations.of(context)!.filters),
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: dateSelectionWidgets,
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Row(
               children: [
-                Row(children: [
-                  const Icon(Icons.check),
-                  Switch(
-                    value: showCompleted,
-                    onChanged: (value) => setState(() {
-                      showCompleted = value;
-                    }),
-                  )
-                ]),
-                Row(children: [
-                  const Icon(Icons.cancel),
-                  Switch(
-                    value: showCanceled,
-                    onChanged: (value) => setState(() {
-                      showCanceled = value;
-                    }),
-                  )
-                ]),
-              ]),
-        ]);
+                const Icon(Icons.check),
+                Switch(
+                  value: showCompleted,
+                  onChanged: (value) => setState(() {
+                    showCompleted = value;
+                  }),
+                ),
+              ],
+            ),
+            Row(
+              children: [
+                const Icon(Icons.cancel),
+                Switch(
+                  value: showCanceled,
+                  onChanged: (value) => setState(() {
+                    showCanceled = value;
+                  }),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
   }
 
   AppBar buildAppBar(
-      BuildContext context, UtilItemListResponse itemListResponse) {
+    BuildContext context,
+    UtilItemListResponse itemListResponse,
+  ) {
     return AppBar(
       backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       title: Text(widget.title),
       actions: [
         if (_selectedTasks.isNotEmpty)
           IconButton(
-              onPressed: () async {
-                bool anyWereChanged = false;
-
-                final cacheClient = await getCacheClient(widget.client);
-
-                final colUid = await getCollectionUIDInCacheHive(cacheClient);
-                for (var entry in _selectedTasks.entries.toList()) {
-                  final item = entry.value;
-                  final eteItem = item.item;
-                  final icalendar = item.icalendar;
-                  final itemManager = widget.itemManager;
-                  final compTodo = icalendar.todo!;
-                  if ([TodoStatus.completed, TodoStatus.cancelled]
-                      .contains(compTodo.status)) {
-                    return;
-                  }
-                  try {
-                    if (context.mounted) {
-                      refreshTimer?.cancel();
-                      await onPressedModifyDueDate(eteItem, icalendar,
-                              itemManager, compTodo, context)
-                          .then((value) async {
-                        if (value == null) {
-                          return value;
-                        } else {
-                          anyWereChanged = true;
-                        }
-
-                        await cacheClient.itemSet(itemManager, colUid,
-                            itemManager.cacheLoad(value["item"]));
-
-                        _selectedTasks.remove(entry.key);
-
-                        itemListResponse.items.remove(eteItem);
-                        itemListResponse.items[value["item"] as Uint8List] =
-                            ItemListItem.fromMap(value);
-                        dbRowsInsert([
-                          MapEntry(value["item"], ItemListItem.fromMap(value)),
-                        ], widget.db, widget.colType);
-                        itemListResponse.items.clear();
-                        setState(() {
-                          _itemListResponse =
-                              Future<UtilItemListResponse>.value(
-                                  itemListResponse);
-                        });
-                        return value;
-                      });
-                      refreshTimer =
-                          Timer.periodic(timerRefreshDuration, (timer) {
-                        setState(() {
-                          _itemListResponse = getItemListResponse(
-                              widget.itemManager, widget.client, widget.colUid,
-                              db: widget.db);
-                        });
-                      });
-                    }
-                  } on EtebaseException catch (error, stackTrace) {
-                    if (kDebugMode) {
-                      print(stackTrace);
-                      print(error);
-                    }
-
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text(error.message),
-                        duration: const Duration(seconds: 5),
-                        action: SnackBarAction(
-                          label: 'OK',
-                          onPressed: () async {
-                            ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                          },
-                        ),
-                      ));
-                    }
-                    if (error is Conflict) {
-                      final itemUpdatedFromServer = await itemManager
-                          .fetch((itemManager.cacheLoad(eteItem)).uid);
-                      final contentFromServer =
-                          await itemUpdatedFromServer.getContent();
-
-                      final cacheClient = await Cache.create(
-                          widget.client, await getCacheHiveDir());
-                      final colUid =
-                          await getCollectionUIDInCacheHive(cacheClient);
-                      await cacheClient.itemSet(
-                          itemManager, colUid, itemUpdatedFromServer);
-                      await cacheClient.dispose();
-
-                      itemListResponse.items.remove(eteItem);
-
-                      itemListResponse.items[itemManager.cacheSave(
-                        itemUpdatedFromServer,
-                      )] = ItemListItem.fromMap({
-                        "itemContent": contentFromServer,
-                        "itemUid": itemUpdatedFromServer.uid,
-                        "itemIsDeleted": itemUpdatedFromServer.isDeleted,
-                        "itemType":
-                            (await itemUpdatedFromServer.getMeta()).itemType,
-                        "itemName":
-                            (await itemUpdatedFromServer.getMeta()).name,
-                        "mtime": (await itemUpdatedFromServer.getMeta()).mtime,
-                      });
-                      dbRowsInsert([
-                        MapEntry(
-                            itemManager.cacheSave(
-                              itemUpdatedFromServer,
-                            ),
-                            ItemListItem.fromMap({
-                              "itemContent": contentFromServer,
-                              "itemUid": itemUpdatedFromServer.uid,
-                              "itemIsDeleted": itemUpdatedFromServer.isDeleted,
-                              "itemType":
-                                  (await itemUpdatedFromServer.getMeta())
-                                      .itemType,
-                              "itemName":
-                                  (await itemUpdatedFromServer.getMeta()).name,
-                              "mtime":
-                                  (await itemUpdatedFromServer.getMeta()).mtime,
-                            }))
-                      ], widget.db, widget.colType);
-                      itemListResponse.items.clear();
-                      setState(() {
-                        _itemListResponse = Future<UtilItemListResponse>.value(
-                            itemListResponse);
-                      });
-                    }
-                  }
-                }
-                if (anyWereChanged) {
-                  setState(() {
-                    _itemListResponse = getItemListResponse(
-                        widget.itemManager, widget.client, widget.colUid,
-                        db: widget.db);
-                  });
-                }
-                await cacheClient.dispose();
-              },
-              icon: const Icon(Icons.watch_later_outlined)),
-        if (_selectedTasks.isNotEmpty)
-          IconButton(
             onPressed: () async {
               bool anyWereChanged = false;
 
-              final cacheClient =
-                  await Cache.create(widget.client, (await getCacheHiveDir()));
+              final cacheClient = await getCacheClient(widget.client);
 
               final colUid = await getCollectionUIDInCacheHive(cacheClient);
               for (var entry in _selectedTasks.entries.toList()) {
@@ -928,47 +1003,62 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                 final icalendar = item.icalendar;
                 final itemManager = widget.itemManager;
                 final compTodo = icalendar.todo!;
-                if ([TodoStatus.completed, TodoStatus.cancelled]
-                    .contains(compTodo.status)) {
+                if ([
+                  TodoStatus.completed,
+                  TodoStatus.cancelled,
+                ].contains(compTodo.status)) {
                   return;
                 }
                 try {
                   if (context.mounted) {
                     refreshTimer?.cancel();
-                    await onPressedModifySnooze(
-                            eteItem, icalendar, itemManager, compTodo, context)
-                        .then((value) async {
+                    await onPressedModifyDueDate(
+                      eteItem,
+                      icalendar,
+                      itemManager,
+                      compTodo,
+                      context,
+                    ).then((value) async {
                       if (value == null) {
                         return value;
                       } else {
                         anyWereChanged = true;
                       }
 
-                      await cacheClient.itemSet(itemManager, colUid,
-                          itemManager.cacheLoad(value["item"]));
+                      await cacheClient.itemSet(
+                        itemManager,
+                        colUid,
+                        itemManager.cacheLoad(value["item"]),
+                      );
 
                       _selectedTasks.remove(entry.key);
 
                       itemListResponse.items.remove(eteItem);
                       itemListResponse.items[value["item"] as Uint8List] =
                           ItemListItem.fromMap(value);
-                      dbRowsInsert([
-                        MapEntry(value["item"], ItemListItem.fromMap(value))
-                      ], widget.db, widget.colType);
-
+                      dbRowsInsert(
+                        [MapEntry(value["item"], ItemListItem.fromMap(value))],
+                        widget.db,
+                        widget.colType,
+                      );
                       itemListResponse.items.clear();
                       setState(() {
                         _itemListResponse = Future<UtilItemListResponse>.value(
-                            itemListResponse);
+                          itemListResponse,
+                        );
                       });
                       return value;
                     });
-                    refreshTimer =
-                        Timer.periodic(timerRefreshDuration, (timer) {
+                    refreshTimer = Timer.periodic(timerRefreshDuration, (
+                      timer,
+                    ) {
                       setState(() {
                         _itemListResponse = getItemListResponse(
-                            widget.itemManager, widget.client, widget.colUid,
-                            db: widget.db);
+                          widget.itemManager,
+                          widget.client,
+                          widget.colUid,
+                          db: widget.db,
+                        );
                       });
                     });
                   }
@@ -979,29 +1069,38 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                   }
 
                   if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Text(error.message),
-                      duration: const Duration(seconds: 5),
-                      action: SnackBarAction(
-                        label: 'OK',
-                        onPressed: () async {
-                          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                        },
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(error.message),
+                        duration: const Duration(seconds: 5),
+                        action: SnackBarAction(
+                          label: 'OK',
+                          onPressed: () async {
+                            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                          },
+                        ),
                       ),
-                    ));
+                    );
                   }
                   if (error is Conflict) {
-                    final itemUpdatedFromServer = await itemManager
-                        .fetch((itemManager.cacheLoad(eteItem)).uid);
+                    final itemUpdatedFromServer = await itemManager.fetch(
+                      (itemManager.cacheLoad(eteItem)).uid,
+                    );
                     final contentFromServer =
                         await itemUpdatedFromServer.getContent();
 
                     final cacheClient = await Cache.create(
-                        widget.client, await getCacheHiveDir());
-                    final colUid =
-                        await getCollectionUIDInCacheHive(cacheClient);
+                      widget.client,
+                      await getCacheHiveDir(),
+                    );
+                    final colUid = await getCollectionUIDInCacheHive(
+                      cacheClient,
+                    );
                     await cacheClient.itemSet(
-                        itemManager, colUid, itemUpdatedFromServer);
+                      itemManager,
+                      colUid,
+                      itemUpdatedFromServer,
+                    );
                     await cacheClient.dispose();
 
                     itemListResponse.items.remove(eteItem);
@@ -1017,8 +1116,9 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                       "itemName": (await itemUpdatedFromServer.getMeta()).name,
                       "mtime": (await itemUpdatedFromServer.getMeta()).mtime,
                     });
-                    dbRowsInsert([
-                      MapEntry(
+                    dbRowsInsert(
+                      [
+                        MapEntry(
                           itemManager.cacheSave(itemUpdatedFromServer),
                           ItemListItem.fromMap({
                             "itemContent": contentFromServer,
@@ -1030,12 +1130,17 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                                 (await itemUpdatedFromServer.getMeta()).name,
                             "mtime":
                                 (await itemUpdatedFromServer.getMeta()).mtime,
-                          }))
-                    ], widget.db, widget.colType);
+                          }),
+                        ),
+                      ],
+                      widget.db,
+                      widget.colType,
+                    );
                     itemListResponse.items.clear();
                     setState(() {
-                      _itemListResponse =
-                          Future<UtilItemListResponse>.value(itemListResponse);
+                      _itemListResponse = Future<UtilItemListResponse>.value(
+                        itemListResponse,
+                      );
                     });
                   }
                 }
@@ -1043,8 +1148,185 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
               if (anyWereChanged) {
                 setState(() {
                   _itemListResponse = getItemListResponse(
-                      widget.itemManager, widget.client, widget.colUid,
-                      db: widget.db);
+                    widget.itemManager,
+                    widget.client,
+                    widget.colUid,
+                    db: widget.db,
+                  );
+                });
+              }
+              await cacheClient.dispose();
+            },
+            icon: const Icon(Icons.watch_later_outlined),
+          ),
+        if (_selectedTasks.isNotEmpty)
+          IconButton(
+            onPressed: () async {
+              bool anyWereChanged = false;
+
+              final cacheClient = await Cache.create(
+                widget.client,
+                (await getCacheHiveDir()),
+              );
+
+              final colUid = await getCollectionUIDInCacheHive(cacheClient);
+              for (var entry in _selectedTasks.entries.toList()) {
+                final item = entry.value;
+                final eteItem = item.item;
+                final icalendar = item.icalendar;
+                final itemManager = widget.itemManager;
+                final compTodo = icalendar.todo!;
+                if ([
+                  TodoStatus.completed,
+                  TodoStatus.cancelled,
+                ].contains(compTodo.status)) {
+                  return;
+                }
+                try {
+                  if (context.mounted) {
+                    refreshTimer?.cancel();
+                    await onPressedModifySnooze(
+                      eteItem,
+                      icalendar,
+                      itemManager,
+                      compTodo,
+                      context,
+                    ).then((value) async {
+                      if (value == null) {
+                        return value;
+                      } else {
+                        anyWereChanged = true;
+                      }
+
+                      await cacheClient.itemSet(
+                        itemManager,
+                        colUid,
+                        itemManager.cacheLoad(value["item"]),
+                      );
+
+                      _selectedTasks.remove(entry.key);
+
+                      itemListResponse.items.remove(eteItem);
+                      itemListResponse.items[value["item"] as Uint8List] =
+                          ItemListItem.fromMap(value);
+                      dbRowsInsert(
+                        [MapEntry(value["item"], ItemListItem.fromMap(value))],
+                        widget.db,
+                        widget.colType,
+                      );
+
+                      itemListResponse.items.clear();
+                      setState(() {
+                        _itemListResponse = Future<UtilItemListResponse>.value(
+                          itemListResponse,
+                        );
+                      });
+                      return value;
+                    });
+                    refreshTimer = Timer.periodic(timerRefreshDuration, (
+                      timer,
+                    ) {
+                      setState(() {
+                        _itemListResponse = getItemListResponse(
+                          widget.itemManager,
+                          widget.client,
+                          widget.colUid,
+                          db: widget.db,
+                        );
+                      });
+                    });
+                  }
+                } on EtebaseException catch (error, stackTrace) {
+                  if (kDebugMode) {
+                    print(stackTrace);
+                    print(error);
+                  }
+
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(error.message),
+                        duration: const Duration(seconds: 5),
+                        action: SnackBarAction(
+                          label: 'OK',
+                          onPressed: () async {
+                            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                          },
+                        ),
+                      ),
+                    );
+                  }
+                  if (error is Conflict) {
+                    final itemUpdatedFromServer = await itemManager.fetch(
+                      (itemManager.cacheLoad(eteItem)).uid,
+                    );
+                    final contentFromServer =
+                        await itemUpdatedFromServer.getContent();
+
+                    final cacheClient = await Cache.create(
+                      widget.client,
+                      await getCacheHiveDir(),
+                    );
+                    final colUid = await getCollectionUIDInCacheHive(
+                      cacheClient,
+                    );
+                    await cacheClient.itemSet(
+                      itemManager,
+                      colUid,
+                      itemUpdatedFromServer,
+                    );
+                    await cacheClient.dispose();
+
+                    itemListResponse.items.remove(eteItem);
+
+                    itemListResponse.items[itemManager.cacheSave(
+                      itemUpdatedFromServer,
+                    )] = ItemListItem.fromMap({
+                      "itemContent": contentFromServer,
+                      "itemUid": itemUpdatedFromServer.uid,
+                      "itemIsDeleted": itemUpdatedFromServer.isDeleted,
+                      "itemType":
+                          (await itemUpdatedFromServer.getMeta()).itemType,
+                      "itemName": (await itemUpdatedFromServer.getMeta()).name,
+                      "mtime": (await itemUpdatedFromServer.getMeta()).mtime,
+                    });
+                    dbRowsInsert(
+                      [
+                        MapEntry(
+                          itemManager.cacheSave(itemUpdatedFromServer),
+                          ItemListItem.fromMap({
+                            "itemContent": contentFromServer,
+                            "itemUid": itemUpdatedFromServer.uid,
+                            "itemIsDeleted": itemUpdatedFromServer.isDeleted,
+                            "itemType": (await itemUpdatedFromServer.getMeta())
+                                .itemType,
+                            "itemName":
+                                (await itemUpdatedFromServer.getMeta()).name,
+                            "mtime":
+                                (await itemUpdatedFromServer.getMeta()).mtime,
+                          }),
+                        ),
+                      ],
+                      widget.db,
+                      widget.colType,
+                    );
+                    itemListResponse.items.clear();
+                    setState(() {
+                      _itemListResponse = Future<UtilItemListResponse>.value(
+                        itemListResponse,
+                      );
+                    });
+                  }
+                }
+              }
+              if (anyWereChanged) {
+                setState(() {
+                  _itemListResponse = getItemListResponse(
+                    widget.itemManager,
+                    widget.client,
+                    widget.colUid,
+                    db: widget.db,
+                  );
                 });
               }
               await cacheClient.dispose();
@@ -1058,186 +1340,257 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
 
   Drawer buildDrawer(BuildContext context, LocaleModel localeModel) {
     return Drawer(
-        child: ListView(children: [
-      DrawerHeader(
-          child: Column(children: [
-        const Text("Collection List"),
-        ListTile(
-          onTap: () async {
-            String currentLanguageCode = localeModel.locale.languageCode;
-            String? currentCountryCode = localeModel.locale.countryCode;
+      child: ListView(
+        children: [
+          DrawerHeader(
+            child: Column(
+              children: [
+                const Text("Collection List"),
+                ListTile(
+                  onTap: () async {
+                    String currentLanguageCode =
+                        localeModel.locale.languageCode;
+                    String? currentCountryCode = localeModel.locale.countryCode;
 
-            await showDialog(
-                context: context,
-                builder: (BuildContext context) {
-                  return AlertDialog(
-                    content: Column(
-                        children: AppLocalizations.supportedLocales
-                            .map((e) => ListTile(
-                                  title: Text(e.languageCode),
-                                  leading: Locale.fromSubtags(
-                                                  languageCode:
-                                                      currentLanguageCode,
-                                                  countryCode:
-                                                      currentCountryCode)
-                                              .languageCode ==
-                                          e.languageCode
-                                      ? const Icon(Icons.check)
-                                      : null,
-                                  onTap: () async {
-                                    final Future<SharedPreferences>
-                                        prefsInstance =
-                                        SharedPreferences.getInstance();
-                                    final SharedPreferences prefs =
-                                        await prefsInstance;
-                                    await prefs.setString(
-                                        "locale", e.languageCode);
-                                    if (e.countryCode != null) {
+                    await showDialog(
+                      context: context,
+                      builder: (BuildContext context) {
+                        return AlertDialog(
+                          content: Column(
+                            children: AppLocalizations.supportedLocales
+                                .map(
+                                  (e) => ListTile(
+                                    title: Text(e.languageCode),
+                                    leading: Locale.fromSubtags(
+                                              languageCode: currentLanguageCode,
+                                              countryCode: currentCountryCode,
+                                            ).languageCode ==
+                                            e.languageCode
+                                        ? const Icon(Icons.check)
+                                        : null,
+                                    onTap: () async {
+                                      final Future<SharedPreferences>
+                                          prefsInstance =
+                                          SharedPreferences.getInstance();
+                                      final SharedPreferences prefs =
+                                          await prefsInstance;
                                       await prefs.setString(
-                                          "countryCode", e.countryCode!);
-                                    } else if (prefs.getString("countryCode") !=
-                                        null) {
-                                      await prefs.remove("countryCode");
-                                    }
+                                        "locale",
+                                        e.languageCode,
+                                      );
+                                      if (e.countryCode != null) {
+                                        await prefs.setString(
+                                          "countryCode",
+                                          e.countryCode!,
+                                        );
+                                      } else if (prefs.getString(
+                                            "countryCode",
+                                          ) !=
+                                          null) {
+                                        await prefs.remove("countryCode");
+                                      }
 
-                                    if (e.languageCode != currentLanguageCode ||
-                                        e.countryCode != currentCountryCode) {
-                                      localeModel.set(e);
-                                    }
-                                    if (context.mounted) {
-                                      await Navigator.maybePop(context);
-                                    }
-                                  },
-                                ))
-                            .toList()),
-                    actions: [
-                      TextButton(
-                        child: const Text("Done"),
-                        onPressed: () async {
-                          await Navigator.maybePop(context);
-                        },
-                      )
-                    ],
-                  );
-                });
-          },
-          title: Text(AppLocalizations.of(context)!.language),
-          trailing: const Icon(Icons.language),
-        ),
-        TextButton(
-            onPressed: () async {
-              final Future<SharedPreferences> prefsInstance =
-                  SharedPreferences.getInstance();
-              final SharedPreferences prefs = await prefsInstance;
-              final eteBaseUrlRawString = prefs.getString("ete_base_url");
-              final serverUri = eteBaseUrlRawString != null
-                  ? Uri.tryParse(eteBaseUrlRawString)
-                  : null;
+                                      if (e.languageCode !=
+                                              currentLanguageCode ||
+                                          e.countryCode != currentCountryCode) {
+                                        localeModel.set(e);
+                                      }
+                                      if (context.mounted) {
+                                        await Navigator.maybePop(context);
+                                      }
+                                    },
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                          actions: [
+                            TextButton(
+                              child: const Text("Done"),
+                              onPressed: () async {
+                                await Navigator.maybePop(context);
+                              },
+                            ),
+                          ],
+                        );
+                      },
+                    );
+                  },
+                  title: Text(AppLocalizations.of(context)!.language),
+                  trailing: const Icon(Icons.language),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    const secureStorage = FlutterSecureStorage();
 
-              const secureStorage = FlutterSecureStorage();
+                    final eteCacheAccountEncryptionKey = await secureStorage
+                        .read(key: eteCacheAccountEncryptionKeyString)
+                        .then(
+                          (value) =>
+                              value != null ? base64Decode(value) : value,
+                        ) as Uint8List?;
 
-              final eteCacheAccountEncryptionKey = await secureStorage
-                      .read(key: eteCacheAccountEncryptionKeyString)
-                      .then((value) =>
-                          value != null ? base64Decode(value) : value)
-                  as Uint8List?;
+                    final cacheClient = await getCacheClient(widget.client);
 
-              final cacheClient = await getCacheClient(widget.client);
+                    final sodium = await SodiumSumoInit.init();
+                    final etebase = await cacheClient.loadAccount(
+                      SecureKey.fromList(sodium, eteCacheAccountEncryptionKey!),
+                    );
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (BuildContext context) =>
+                            ChangePasswordModal(account: etebase),
+                      ),
+                    );
+                  },
+                  child: const Text("Change Password"),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    final Future<SharedPreferences> prefsInstance =
+                        SharedPreferences.getInstance();
+                    final SharedPreferences prefs = await prefsInstance;
+                    final eteBaseUrlRawString = prefs.getString("ete_base_url");
+                    final serverUri = eteBaseUrlRawString != null
+                        ? Uri.tryParse(eteBaseUrlRawString)
+                        : null;
 
-              final sodium = await SodiumSumoInit.init();
-              final etebase = await cacheClient.loadAccount(
-                  SecureKey.fromList(sodium, eteCacheAccountEncryptionKey!));
+                    const secureStorage = FlutterSecureStorage();
 
-              await etebase.logout();
-              await cacheClient.clearUser();
-              final sqlTables = ["etebase_item_model", "etebase_note_model"];
-              for (var element in sqlTables) {
-                final stmt =
-                    widget.db.prepare("drop table if exists $element;");
-                stmt.execute([]);
-                stmt.close();
-                final vacuumStmt = widget.db.prepare("VACUUM;");
-                vacuumStmt.execute([]);
-                vacuumStmt.close();
-              }
+                    final eteCacheAccountEncryptionKey = await secureStorage
+                        .read(key: eteCacheAccountEncryptionKeyString)
+                        .then(
+                          (value) =>
+                              value != null ? base64Decode(value) : value,
+                        ) as Uint8List?;
 
-              if (context.mounted) {
-                Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (BuildContext context) => AccountLoadPage(
-                              client: widget.client,
-                              serverUri: serverUri,
-                            )));
-              }
-            },
-            child: const Text("Sign out")),
-      ])),
-      FutureBuilder<Map<String, dynamic>?>(
-          future: accountInfo,
-          builder: (BuildContext context,
-              AsyncSnapshot<Map<String, dynamic>?> snapshot) {
-            if (!snapshot.hasData) {
-              return const Column(children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.center,
+                    final cacheClient = await getCacheClient(widget.client);
+
+                    final sodium = await SodiumSumoInit.init();
+                    final etebase = await cacheClient.loadAccount(
+                      SecureKey.fromList(sodium, eteCacheAccountEncryptionKey!),
+                    );
+
+                    await etebase.logout();
+                    await cacheClient.clearUser();
+                    final sqlTables = [
+                      "etebase_item_model",
+                      "etebase_note_model",
+                    ];
+                    for (var element in sqlTables) {
+                      final stmt = widget.db.prepare(
+                        "drop table if exists $element;",
+                      );
+                      stmt.execute([]);
+                      stmt.close();
+                      final vacuumStmt = widget.db.prepare("VACUUM;");
+                      vacuumStmt.execute([]);
+                      vacuumStmt.close();
+                    }
+
+                    if (context.mounted) {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (BuildContext context) => AccountLoadPage(
+                            client: widget.client,
+                            serverUri: serverUri,
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                  child: const Text("Sign out"),
+                ),
+              ],
+            ),
+          ),
+          FutureBuilder<Map<String, dynamic>?>(
+            future: accountInfo,
+            builder: (
+              BuildContext context,
+              AsyncSnapshot<Map<String, dynamic>?> snapshot,
+            ) {
+              if (!snapshot.hasData) {
+                return const Column(
                   children: [
-                    Padding(
-                      padding: EdgeInsets.only(right: 24.0),
-                      child: Text("Fetching cache configuration."),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Padding(
+                          padding: EdgeInsets.only(right: 24.0),
+                          child: Text("Fetching cache configuration."),
+                        ),
+                        CircularProgressIndicator(),
+                      ],
                     ),
-                    CircularProgressIndicator(),
                   ],
-                )
-              ]);
-            }
-            final cacheDir = snapshot.data!["cacheDir"]!;
-            final username = snapshot.data!["username"]!;
-            return FutureBuilder<Map<String, dynamic>?>(
+                );
+              }
+              final cacheDir = snapshot.data!["cacheDir"]!;
+              final username = snapshot.data!["username"]!;
+              return FutureBuilder<Map<String, dynamic>?>(
                 future: collections,
-                builder: (BuildContext context,
-                    AsyncSnapshot<Map<String, dynamic>?> snapshot) {
+                builder: (
+                  BuildContext context,
+                  AsyncSnapshot<Map<String, dynamic>?> snapshot,
+                ) {
                   if (snapshot.hasData) {
                     final collectionsResponse = snapshot.data!;
                     final items = collectionsResponse["items"]
                         as Map<Collection, Map<String, dynamic>>;
                     final collItems = (items.entries
-                        .where((element) => !element.value["itemIsDeleted"])
-                        .map((element) => buildDrawerCollectionListTile(
+                        .where(
+                          (element) => !element.value["itemIsDeleted"],
+                        )
+                        .map(
+                          (element) => buildDrawerCollectionListTile(
                             element,
                             context,
                             cacheDir,
                             username,
                             collectionsResponse["collectionManager"]
-                                as CollectionManager))
+                                as CollectionManager,
+                          ),
+                        )
                         .toList());
                     return Column(children: collItems);
                   } else {
-                    return Column(children: [
-                      const Text("Loading collection UIDs"),
-                      if (snapshot.hasError) Text(snapshot.error.toString()),
-                      const CircularProgressIndicator()
-                    ]);
+                    return Column(
+                      children: [
+                        const Text("Loading collection UIDs"),
+                        if (snapshot.hasError) Text(snapshot.error.toString()),
+                        const CircularProgressIndicator(),
+                      ],
+                    );
                   }
-                });
-          }),
-      const Divider(),
-      TextButton(
-          onPressed: () => Navigator.push(
+                },
+              );
+            },
+          ),
+          const Divider(),
+          TextButton(
+            onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(
-                  builder: (BuildContext context) => const LicensesWidget())),
-          child: const Text("Licenses"))
-    ]));
+                builder: (BuildContext context) => const LicensesWidget(),
+              ),
+            ),
+            child: const Text("Licenses"),
+          ),
+        ],
+      ),
+    );
   }
 
   ListTile buildDrawerCollectionListTile(
-      MapEntry<Collection, Map<String, dynamic>> element,
-      BuildContext context,
-      cacheDir,
-      username,
-      CollectionManager collectionManager) {
+    MapEntry<Collection, Map<String, dynamic>> element,
+    BuildContext context,
+    cacheDir,
+    username,
+    CollectionManager collectionManager,
+  ) {
     final itemDataMap = element.value;
 
     final String itemUid = itemDataMap["itemUid"];
@@ -1246,18 +1599,21 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     return ListTile(
       selected: itemUid == widget.colUid,
       title: Text(itemName ?? "<N/A> My Tasks"),
-      leading: Icon(Icons.square,
-          color: itemColor != null && itemColor.isNotEmpty
-              ? buildCollectionColor(itemColor)
-              : Colors.green),
+      leading: Icon(
+        Icons.square,
+        color: itemColor != null && itemColor.isNotEmpty
+            ? buildCollectionColor(itemColor)
+            : Colors.green,
+      ),
       trailing: Tooltip(message: itemUid, child: const Icon(Icons.info)),
       onTap: () async {
         if (itemUid == widget.colUid) {
           Navigator.maybePop(context);
           return;
         }
-        final activeCollectionFile =
-            File("$cacheDir/$username/.activeCollection");
+        final activeCollectionFile = File(
+          "$cacheDir/$username/.activeCollection",
+        );
         await activeCollectionFile.writeAsString(itemUid);
         //Navigator.maybePop(context, element);
 
@@ -1267,18 +1623,20 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
         final newEteClient = await getEtebaseClient();
         if (context.mounted) {
           Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                  builder: (BuildContext context) => MyHomePage(
-                        title: itemName ?? "My Tasks",
-                        itemManager: itemManager,
-                        client: newEteClient,
-                        colUid: colUid,
-                        colType: colType,
-                        db: widget.db,
-                        username: widget.username,
-                        cacheDir: widget.cacheDir,
-                      )));
+            context,
+            MaterialPageRoute(
+              builder: (BuildContext context) => MyHomePage(
+                title: itemName ?? "My Tasks",
+                itemManager: itemManager,
+                client: newEteClient,
+                colUid: colUid,
+                colType: colType,
+                db: widget.db,
+                username: widget.username,
+                cacheDir: widget.cacheDir,
+              ),
+            ),
+          );
         }
       },
     );
@@ -1286,107 +1644,146 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
 
   Color buildCollectionColor(String itemColorString) {
     return Color.fromRGBO(
-        int.parse(itemColorString.substring(1, 3), radix: 16),
-        int.parse(itemColorString.substring(3, 5), radix: 16),
-        int.parse(itemColorString.substring(5, 7), radix: 16),
-        1.0);
+      int.parse(itemColorString.substring(1, 3), radix: 16),
+      int.parse(itemColorString.substring(3, 5), radix: 16),
+      int.parse(itemColorString.substring(5, 7), radix: 16),
+      1.0,
+    );
   }
 
   /// Returns widgets for date selection
   List<Widget> getDateSelectionWidgets(BuildContext context) {
     final dateSelectionWidgets = <Widget>[
       Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const Text("Today"),
-            Switch(
-                value: todaySearch,
-                activeThumbColor:
-                    _searchTextController.text.isNotEmpty ? Colors.grey : null,
-                onChanged: (bool newValue) {
-                  setState(() {
-                    todaySearch = newValue;
-                    if (newValue) {
-                      dateSearchEnd = DateTime.now()
-                          .copyWith(hour: 23, minute: 59, second: 59);
-                    }
-                    if (!newValue && dateSearchStart == null) {
-                      dateSearchStart = DateTime.now()
-                          .copyWith(hour: 0, minute: 0, second: 0);
-                      _dateSearchStartController.text =
-                          intl.DateFormat("yyyy-MM-dd")
-                              .format(dateSearchStart!.toLocal());
-                    }
-                  });
-                }),
-            const VerticalDivider()
-          ]),
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const Text("Today"),
+          Switch(
+            value: todaySearch,
+            activeThumbColor:
+                _searchTextController.text.isNotEmpty ? Colors.grey : null,
+            onChanged: (bool newValue) {
+              setState(() {
+                todaySearch = newValue;
+                if (newValue) {
+                  dateSearchEnd = DateTime.now().copyWith(
+                    hour: 23,
+                    minute: 59,
+                    second: 59,
+                  );
+                }
+                if (!newValue && dateSearchStart == null) {
+                  dateSearchStart = DateTime.now().copyWith(
+                    hour: 0,
+                    minute: 0,
+                    second: 0,
+                  );
+                  _dateSearchStartController.text = intl.DateFormat(
+                    "yyyy-MM-dd",
+                  ).format(dateSearchStart!.toLocal());
+                }
+              });
+            },
+          ),
+          const VerticalDivider(),
+        ],
+      ),
       SizedBox(
-          width: 175,
-          child: TextField(
-              controller: _dateSearchStartController,
-              readOnly: true,
-              onTap: () async {
-                await showDatePicker(
-                        context: context,
-                        firstDate: DateTime(2000),
-                        lastDate: DateTime(2100),
-                        initialDate: (dateSearchStart ?? DateTime.now())
-                            .copyWith(hour: 0, minute: 0, second: 0),
-                        currentDate: (DateTime.now())
-                            .copyWith(hour: 0, minute: 0, second: 0))
-                    .then((value) => setState(() {
-                          dateSearchStart =
-                              value?.copyWith(hour: 0, minute: 0, second: 0);
-                          _dateSearchStartController.text =
-                              dateSearchStart != null
-                                  ? intl.DateFormat("yyyy-MM-dd")
-                                      .format(dateSearchStart!.toLocal())
-                                  : "";
-                        }));
-              },
-              decoration: const InputDecoration(
-                  icon: Icon(Icons.calendar_month),
-                  label: Text("Start date range")))),
+        width: 175,
+        child: TextField(
+          controller: _dateSearchStartController,
+          readOnly: true,
+          onTap: () async {
+            await showDatePicker(
+              context: context,
+              firstDate: DateTime(2000),
+              lastDate: DateTime(2100),
+              initialDate: (dateSearchStart ?? DateTime.now()).copyWith(
+                hour: 0,
+                minute: 0,
+                second: 0,
+              ),
+              currentDate: (DateTime.now()).copyWith(
+                hour: 0,
+                minute: 0,
+                second: 0,
+              ),
+            ).then(
+              (value) => setState(() {
+                dateSearchStart = value?.copyWith(
+                  hour: 0,
+                  minute: 0,
+                  second: 0,
+                );
+                _dateSearchStartController.text = dateSearchStart != null
+                    ? intl.DateFormat(
+                        "yyyy-MM-dd",
+                      ).format(dateSearchStart!.toLocal())
+                    : "";
+              }),
+            );
+          },
+          decoration: const InputDecoration(
+            icon: Icon(Icons.calendar_month),
+            label: Text("Start date range"),
+          ),
+        ),
+      ),
       SizedBox(
-          width: 175,
-          child: TextField(
-              controller: _dateSearchEndController,
-              readOnly: true,
-              onTap: () async {
-                await showDatePicker(
-                        context: context,
-                        firstDate: DateTime(2000),
-                        lastDate: DateTime(2100),
-                        initialDate: (dateSearchEnd ?? DateTime.now())
-                            .copyWith(hour: 23, minute: 59, second: 59),
-                        currentDate: (DateTime.now())
-                            .copyWith(hour: 23, minute: 59, second: 59))
-                    .then((value) => setState(() {
-                          dateSearchEnd =
-                              value?.copyWith(hour: 23, minute: 59, second: 59);
-                          _dateSearchEndController.text = dateSearchEnd != null
-                              ? intl.DateFormat("yyyy-MM-dd")
-                                  .format(dateSearchEnd!.toLocal())
-                              : "";
-                        }));
-              },
-              decoration: const InputDecoration(
-                  icon: Icon(Icons.calendar_month),
-                  label: Text("End date range")))),
+        width: 175,
+        child: TextField(
+          controller: _dateSearchEndController,
+          readOnly: true,
+          onTap: () async {
+            await showDatePicker(
+              context: context,
+              firstDate: DateTime(2000),
+              lastDate: DateTime(2100),
+              initialDate: (dateSearchEnd ?? DateTime.now()).copyWith(
+                hour: 23,
+                minute: 59,
+                second: 59,
+              ),
+              currentDate: (DateTime.now()).copyWith(
+                hour: 23,
+                minute: 59,
+                second: 59,
+              ),
+            ).then(
+              (value) => setState(() {
+                dateSearchEnd = value?.copyWith(
+                  hour: 23,
+                  minute: 59,
+                  second: 59,
+                );
+                _dateSearchEndController.text = dateSearchEnd != null
+                    ? intl.DateFormat(
+                        "yyyy-MM-dd",
+                      ).format(dateSearchEnd!.toLocal())
+                    : "";
+              }),
+            );
+          },
+          decoration: const InputDecoration(
+            icon: Icon(Icons.calendar_month),
+            label: Text("End date range"),
+          ),
+        ),
+      ),
     ];
     return dateSelectionWidgets;
   }
 
   Future<Map<String, dynamic>?> onPressedItemWidget(
-      BuildContext context,
-      Uint8List byteBuffer,
-      VCalendar icalendar,
-      ItemManager itemManager,
-      Map<String, dynamic> itemMap,
-      Client client) async {
+    BuildContext context,
+    Uint8List byteBuffer,
+    VCalendar icalendar,
+    ItemManager itemManager,
+    Map<String, dynamic> itemMap,
+    Client client,
+  ) async {
     refreshTimer?.cancel();
     if (!context.mounted) {
       return {};
@@ -1396,31 +1793,38 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       return {};
     }
     final comingBack = await Navigator.push<Map<String, dynamic>?>(
-        context,
-        MaterialPageRoute(
-            builder: (context) => EtebaseItemRoute(
-                item: item,
-                icalendar: icalendar,
-                itemManager: itemManager,
-                itemMap: itemMap,
-                client: client)));
+      context,
+      MaterialPageRoute(
+        builder: (context) => EtebaseItemRoute(
+          item: item,
+          icalendar: icalendar,
+          itemManager: itemManager,
+          itemMap: itemMap,
+          client: client,
+        ),
+      ),
+    );
     refreshTimer = Timer.periodic(timerRefreshDuration, (timer) {
       setState(() {
         today = DateTime.now();
         _itemListResponse = getItemListResponse(
-            widget.itemManager, widget.client, widget.colUid,
-            db: widget.db);
+          widget.itemManager,
+          widget.client,
+          widget.colUid,
+          db: widget.db,
+        );
       });
     });
     return comingBack;
   }
 
   Future<Map<String, dynamic>?> onPressedItemNoteWidget(
-      BuildContext context,
-      Uint8List byteBuffer,
-      ItemManager itemManager,
-      Map<String, dynamic> itemMap,
-      Client client) async {
+    BuildContext context,
+    Uint8List byteBuffer,
+    ItemManager itemManager,
+    Map<String, dynamic> itemMap,
+    Client client,
+  ) async {
     refreshTimer?.cancel();
     if (!context.mounted) {
       return {};
@@ -1430,28 +1834,35 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       return {};
     }
     final comingBack = await Navigator.push<Map<String, dynamic>?>(
-        context,
-        MaterialPageRoute(
-            builder: (context) => ItemNoteRoute(
-                item: item,
-                itemManager: itemManager,
-                itemMap: itemMap,
-                client: client)));
+      context,
+      MaterialPageRoute(
+        builder: (context) => ItemNoteRoute(
+          item: item,
+          itemManager: itemManager,
+          itemMap: itemMap,
+          client: client,
+        ),
+      ),
+    );
     refreshTimer = Timer.periodic(timerRefreshDuration, (timer) {
       setState(() {
         today = DateTime.now();
         _itemListResponse = getItemListResponse(
-            widget.itemManager, widget.client, widget.colUid,
-            db: widget.db);
+          widget.itemManager,
+          widget.client,
+          widget.colUid,
+          db: widget.db,
+        );
       });
     });
     return comingBack;
   }
 
   List<Widget> todoItemList(
-      ItemManager itemManager,
-      Map<Uint8List, ItemListItem> itemMap,
-      UtilItemListResponse itemListResponse) {
+    ItemManager itemManager,
+    Map<Uint8List, ItemListItem> itemMap,
+    UtilItemListResponse itemListResponse,
+  ) {
     final client = widget.client;
     List<Widget> children = [];
     final itemsSorted = <ItemMapWrapper>[];
@@ -1483,7 +1894,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       final sqlStatusClause = showCompleted || showCanceled
           ? "status IN (${[
               [showCompleted, TodoStatus.completed.name],
-              [showCanceled, TodoStatus.cancelled.name]
+              [showCanceled, TodoStatus.cancelled.name],
             ].where((statusThing) => statusThing[0] == true).map((statusThing) => "'(statusThing[1] as String)'").join(",")}) "
           : " NOT status IN ('${TodoStatus.completed.name}','${TodoStatus.cancelled.name}') ";
       final summaryClause = _searchText != null
@@ -1494,25 +1905,29 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
           : "select * from etebase_item_model where itemIsDeleted = 0 and ${_searchText == null ? '(startTime is null and endTime is null and snoozeTime is null) or ((startTime is not null and  unixepoch(startTime) >= ?) or (endTime is not null and  unixepoch(endTime) >= ?) or (snoozeTime is not null and unixepoch(snoozeTime) >= ?)) AND' : ''} status is not NULL AND $sqlStatusClause ${_searchText != null ? ' AND ' : ' '} $summaryClause OR exists (select * from etebase_item_model as submodel where submodel.uid = relatedTo and submodel.startTime is not null and unixepoch(submodel.startTime) >= $dtEpochSeconds or submodel.endTime is not null and unixepoch(submodel.endTime) >= $dtEpochSeconds or submodel.snoozeTime is not null and unixepoch(submodel.snoozeTime) >= $dtEpochSeconds)";
       //print(sqlString);
       final resultSet = widget.db.select(
-          sqlString,
-          showCompleted || showCanceled || _searchText != null
-              ? []
-              : [
-                  dtEpochSeconds,
-                  dtEpochSeconds,
-                  dtEpochSeconds,
-                ]);
+        sqlString,
+        showCompleted || showCanceled || _searchText != null
+            ? []
+            : [dtEpochSeconds, dtEpochSeconds, dtEpochSeconds],
+      );
 
       itemListResponseFromDB = UtilItemListResponse(
-          itemManager: widget.itemManager,
-          username: widget.username,
-          cacheDir: widget.cacheDir,
-          items: Map.fromEntries(resultSet
-              .map((row) => MapEntry(
+        itemManager: widget.itemManager,
+        username: widget.username,
+        cacheDir: widget.cacheDir,
+        items: Map.fromEntries(
+          resultSet
+              .map(
+                (row) => MapEntry(
                   base64Decode(row["byteBuffer"]),
                   ItemListItem.fromEtebaseItemModel(
-                      EtebaseItemModel.fromMap(row))))
-              .toList()));
+                    EtebaseItemModel.fromMap(row),
+                  ),
+                ),
+              )
+              .toList(),
+        ),
+      );
 
       itemMap.clear();
       itemMap.addAll(itemListResponseFromDB.items);
@@ -1523,8 +1938,9 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       // We treat null priority as greater than low, so that it sorts after.
       final priorityIntCompare =
           (a.icalendar.todo!.priorityInt ?? (Priority.low.numericValue + 1))
-              .compareTo((b.icalendar.todo!.priorityInt ??
-                  (Priority.low.numericValue + 1)));
+              .compareTo(
+        (b.icalendar.todo!.priorityInt ?? (Priority.low.numericValue + 1)),
+      );
 
       final aSnoozeTimeText =
           a.icalendar.todo!.getProperty("X-MOZ-SNOOZE-TIME")?.textValue;
@@ -1533,8 +1949,9 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       if (aSnoozeTimeText != null &&
           (a.icalendar.todo!.start != null || a.icalendar.todo!.due != null)) {
         aSnoozeTime = DateTime.parse(aSnoozeTimeText);
-        if (!aSnoozeTime
-            .isAfter(a.icalendar.todo!.start ?? a.icalendar.todo!.due!)) {
+        if (!aSnoozeTime.isAfter(
+          a.icalendar.todo!.start ?? a.icalendar.todo!.due!,
+        )) {
           aSnoozeTime = null;
         }
       }
@@ -1546,8 +1963,9 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       if (bSnoozeTimeText != null &&
           (b.icalendar.todo!.start != null || b.icalendar.todo!.due != null)) {
         bSnoozeTime = DateTime.parse(bSnoozeTimeText);
-        if (!bSnoozeTime
-            .isAfter(b.icalendar.todo!.start ?? b.icalendar.todo!.due!)) {
+        if (!bSnoozeTime.isAfter(
+          b.icalendar.todo!.start ?? b.icalendar.todo!.due!,
+        )) {
           bSnoozeTime = null;
         }
       }
@@ -1617,8 +2035,9 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       final compTodo = icalendar.todo!;
 
       if (_searchText != null &&
-          !(compTodo.summary?.toLowerCase() ?? "")
-              .contains(_searchText!.toLowerCase())) {
+          !(compTodo.summary?.toLowerCase() ?? "").contains(
+            _searchText!.toLowerCase(),
+          )) {
         continue;
       }
       DateTime? dateForLogicStart = compTodo.start;
@@ -1657,8 +2076,9 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
           (dateForLogicStart != null ||
               dateForLogicDue != null ||
               snoozeTime != null) &&
-          (snoozeTime ?? dateForLogicStart ?? dateForLogicDue!)
-                  .compareTo((todaySearch ? dtToday : dateSearchEnd!)) ==
+          (snoozeTime ?? dateForLogicStart ?? dateForLogicDue!).compareTo(
+                (todaySearch ? dtToday : dateSearchEnd!),
+              ) ==
               1 &&
           _searchTextController.text.isEmpty) {
         continue;
@@ -1681,8 +2101,9 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       final compTodo = icalendar.todo!;
 
       if (_searchText != null &&
-          !(compTodo.summary?.toLowerCase() ?? "")
-              .contains(_searchText!.toLowerCase())) {
+          !(compTodo.summary?.toLowerCase() ?? "").contains(
+            _searchText!.toLowerCase(),
+          )) {
         itemsFilteredAndSorted.remove(item);
         continue;
       }
@@ -1710,16 +2131,18 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
           (dateForLogicStart != null ||
               dateForLogicDue != null ||
               snoozeTime != null) &&
-          (snoozeTime ?? dateForLogicStart ?? dateForLogicDue!)
-                  .compareTo((todaySearch ? dtToday : dateSearchEnd!)) ==
+          (snoozeTime ?? dateForLogicStart ?? dateForLogicDue!).compareTo(
+                (todaySearch ? dtToday : dateSearchEnd!),
+              ) ==
               1 &&
           _searchTextController.text.isEmpty) {
         itemsFilteredAndSorted.remove(item);
         continue;
       }
     }
-    for (final itemKeyAndGroup
-        in groupBy(itemsFilteredAndSorted, (elementToPredicate) {
+    for (final itemKeyAndGroup in groupBy(itemsFilteredAndSorted, (
+      elementToPredicate,
+    ) {
       final item = elementToPredicate;
 
       VCalendar? icalendar;
@@ -1739,9 +2162,9 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       }
 
       if ((dateForLogicDue ?? dateForLogicStart) != null && todaySearch) {
-        return (dateForLogicDue ?? dateForLogicStart)!
-                .toLocal()
-                .isBefore(today.toLocal())
+        return (dateForLogicDue ?? dateForLogicStart)!.toLocal().isBefore(
+                  today.toLocal(),
+                )
             ? 0
             : 1;
       } else {
@@ -1751,12 +2174,19 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       final items = itemKeyAndGroup.value;
       if (itemKeyAndGroup.key == 1 && todaySearch) {
         children.add(const Divider());
-        children.add(Padding(
+        children.add(
+          Padding(
             padding: const EdgeInsets.all(8),
-            child: Text.rich(TextSpan(children: [
-              TextSpan(text: AppLocalizations.of(context)!.later),
-              const WidgetSpan(child: Icon(Icons.upcoming, size: 18))
-            ]))));
+            child: Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(text: AppLocalizations.of(context)!.later),
+                  const WidgetSpan(child: Icon(Icons.upcoming, size: 18)),
+                ],
+              ),
+            ),
+          ),
+        );
       }
       for (final item in items) {
         final eteItem = item.item;
@@ -1806,143 +2236,187 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
         final child = ListTile(
           leading: Text(
             dateForLogicDue != null
-                ? (intl.DateFormat(intl.DateFormat.HOUR24_MINUTE)
-                        .format(dateForLogicDue.toLocal()) +
-                    (DateUtils.isSameDay(dateForLogicDue.toLocal(),
-                            today.subtract(const Duration(days: 1)))
+                ? (intl.DateFormat(
+                      intl.DateFormat.HOUR24_MINUTE,
+                    ).format(dateForLogicDue.toLocal()) +
+                    (DateUtils.isSameDay(
+                      dateForLogicDue.toLocal(),
+                      today.subtract(const Duration(days: 1)),
+                    )
                         ? " ${AppLocalizations.of(context)!.yesterday}"
-                        : (DateUtils.isSameDay(dateForLogicDue.toLocal(),
-                                today.add(const Duration(days: 1)))
+                        : (DateUtils.isSameDay(
+                            dateForLogicDue.toLocal(),
+                            today.add(const Duration(days: 1)),
+                          )
                             ? " ${AppLocalizations.of(context)!.tomorrow}"
-                            : (dateForLogicDue
-                                    .isAfter(today.add(const Duration(days: 1)))
+                            : (dateForLogicDue.isAfter(
+                                today.add(const Duration(days: 1)),
+                              )
                                 ? " @ ${intl.DateFormat("yyyy/MM/dd").format(dateForLogicDue.toLocal())}"
                                 : ""))))
                 : "",
             style: TextStyle(
-                color: dateForLogicDue != null &&
-                        DateTime.now().compareTo(dateForLogicDue) > 0
-                    ? const ColorScheme.light().error
-                    : null),
+              color: dateForLogicDue != null &&
+                      DateTime.now().compareTo(dateForLogicDue) > 0
+                  ? const ColorScheme.light().error
+                  : null,
+            ),
           ),
           title: Column(
-              crossAxisAlignment: textDirection == TextDirection.rtl
-                  ? CrossAxisAlignment.end
-                  : CrossAxisAlignment.start,
-              children: [
-                Directionality(
-                    textDirection: intl.Bidi.detectRtlDirectionality(
-                            compTodo.summary ?? "")
+            crossAxisAlignment: textDirection == TextDirection.rtl
+                ? CrossAxisAlignment.end
+                : CrossAxisAlignment.start,
+            children: [
+              Directionality(
+                textDirection:
+                    intl.Bidi.detectRtlDirectionality(compTodo.summary ?? "")
                         ? TextDirection.rtl
                         : TextDirection.ltr,
-                    child: Text(compTodo.summary ?? "")),
-                if (compTodo.description != null &&
-                    compTodo.description!.isNotEmpty)
-                  Directionality(
-                      textDirection: intl.Bidi.detectRtlDirectionality(
-                              compTodo.description ?? "")
-                          ? TextDirection.rtl
-                          : TextDirection.ltr,
-                      child: Text(compTodo.description ?? "")),
-              ]),
+                child: Text(compTodo.summary ?? ""),
+              ),
+              if (compTodo.description != null &&
+                  compTodo.description!.isNotEmpty)
+                Directionality(
+                  textDirection: intl.Bidi.detectRtlDirectionality(
+                    compTodo.description ?? "",
+                  )
+                      ? TextDirection.rtl
+                      : TextDirection.ltr,
+                  child: Text(compTodo.description ?? ""),
+                ),
+            ],
+          ),
           selected: _selectedTasks.containsKey(item.value["itemUid"]),
           selectedTileColor: Colors.grey[100],
           subtitle: Row(
-              mainAxisAlignment: textDirection == TextDirection.ltr
-                  ? MainAxisAlignment.end
-                  : MainAxisAlignment.start,
-              children: <Widget>[
-                Row(
-                  children: [
-                    if (dateForLogicStart != null &&
-                        (dateForLogicStart.isAfter(today) ||
-                            (dateForLogicStart.day < today.day)))
-                      Chip(
-                        label: RichText(
-                          text: TextSpan(children: [
+            mainAxisAlignment: textDirection == TextDirection.ltr
+                ? MainAxisAlignment.end
+                : MainAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: [
+                  if (dateForLogicStart != null &&
+                      (dateForLogicStart.isAfter(today) ||
+                          (dateForLogicStart.day < today.day)))
+                    Chip(
+                      label: RichText(
+                        text: TextSpan(
+                          children: [
                             TextSpan(
-                                text: ((DateUtils.isSameDay(
-                                            dateForLogicStart, today) ||
-                                        DateUtils.isSameDay(
-                                            dateForLogicStart,
-                                            today.subtract(
-                                                const Duration(days: 1))))
-                                    ? (intl.DateFormat.Hm())
-                                        .format(dateForLogicStart.toLocal())
-                                    : intl.DateFormat("yyyy-MM-dd")
-                                        .format(dateForLogicStart.toLocal())),
-                                style: const TextStyle(color: Colors.black87)),
+                              text: ((DateUtils.isSameDay(
+                                        dateForLogicStart,
+                                        today,
+                                      ) ||
+                                      DateUtils.isSameDay(
+                                        dateForLogicStart,
+                                        today.subtract(const Duration(days: 1)),
+                                      ))
+                                  ? (intl.DateFormat.Hm()).format(
+                                      dateForLogicStart.toLocal(),
+                                    )
+                                  : intl.DateFormat(
+                                      "yyyy-MM-dd",
+                                    ).format(dateForLogicStart.toLocal())),
+                              style: const TextStyle(color: Colors.black87),
+                            ),
                             const WidgetSpan(
-                                child: Icon(
-                                  Icons.content_paste_go,
-                                  color: Colors.black87,
-                                ),
-                                alignment: PlaceholderAlignment.middle)
-                          ]),
-                          textScaler: const TextScaler.linear(0.8),
+                              child: Icon(
+                                Icons.content_paste_go,
+                                color: Colors.black87,
+                              ),
+                              alignment: PlaceholderAlignment.middle,
+                            ),
+                          ],
                         ),
-                        labelPadding: const EdgeInsets.all(2),
+                        textScaler: const TextScaler.linear(0.8),
                       ),
-                    // if (false) dueDateChip(dateForLogicDue),
-                  ],
+                      labelPadding: const EdgeInsets.all(2),
+                    ),
+                  // if (false) dueDateChip(dateForLogicDue),
+                ],
+              ),
+              const VerticalDivider(),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                mainAxisSize: MainAxisSize.max,
+                children: (compTodo.categories
+                        ?.map(
+                          (e) => Chip(
+                            label: Text(
+                              e,
+                              textScaler: const TextScaler.linear(0.8),
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            labelPadding: const EdgeInsets.all(2),
+                          ),
+                        )
+                        .toList() ??
+                    []),
+              ),
+              if (isSnoozed)
+                Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Text(
+                    "snoozed: ${intl.DateFormat("${DateUtils.isSameDay(snoozeTime!.toLocal(), DateTime.now()) ? "" : "yyyy-MM-dd "}HH:mm").format(snoozeTime.toLocal())}",
+                    style: const TextStyle(color: Colors.orange),
+                  ),
                 ),
-                const VerticalDivider(),
-                Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    mainAxisSize: MainAxisSize.max,
-                    children: (compTodo.categories
-                            ?.map((e) => Chip(
-                                  label: Text(
-                                    e,
-                                    textScaler: const TextScaler.linear(0.8),
-                                  ),
-                                  visualDensity: VisualDensity.compact,
-                                  labelPadding: const EdgeInsets.all(2),
-                                ))
-                            .toList() ??
-                        [])),
-                if (isSnoozed)
-                  Padding(
-                      padding: const EdgeInsets.only(left: 8),
-                      child: Text(
-                          "snoozed: ${intl.DateFormat("${DateUtils.isSameDay(snoozeTime!.toLocal(), DateTime.now()) ? "" : "yyyy-MM-dd "}HH:mm").format(snoozeTime.toLocal())}",
-                          style: const TextStyle(color: Colors.orange))),
-              ]),
+            ],
+          ),
           trailing: IconButton(
-            icon: Icon(icalendar.todo!.recurrenceRule != null
-                ? Icons.repeat
-                : (statusTodo == TodoStatus.completed
-                    ? Icons.check
-                    : (statusTodo == TodoStatus.cancelled
-                        ? Icons.cancel
-                        : Icons.check_box_outline_blank))),
+            icon: Icon(
+              icalendar.todo!.recurrenceRule != null
+                  ? Icons.repeat
+                  : (statusTodo == TodoStatus.completed
+                      ? Icons.check
+                      : (statusTodo == TodoStatus.cancelled
+                          ? Icons.cancel
+                          : Icons.check_box_outline_blank)),
+            ),
             color: actionColor,
             onPressed: statusTodo == TodoStatus.completed
                 ? null
                 : () async {
                     try {
                       await onPressedToggleCompletion(
-                              eteItem, icalendar!, itemManager, compTodo)
-                          .then((value) async {
+                        eteItem,
+                        icalendar!,
+                        itemManager,
+                        compTodo,
+                      ).then((value) async {
                         final cacheClient = await Cache.create(
-                            widget.client, await getCacheHiveDir());
-                        final colUid =
-                            await getCollectionUIDInCacheHive(cacheClient);
-                        await cacheClient.itemSet(itemManager, colUid,
-                            itemManager.cacheLoad(value["item"]));
+                          widget.client,
+                          await getCacheHiveDir(),
+                        );
+                        final colUid = await getCollectionUIDInCacheHive(
+                          cacheClient,
+                        );
+                        await cacheClient.itemSet(
+                          itemManager,
+                          colUid,
+                          itemManager.cacheLoad(value["item"]),
+                        );
                         await cacheClient.dispose();
 
                         itemListResponse.items.remove(eteItem);
                         itemListResponse.items[value["item"]] =
                             ItemListItem.fromMap(value);
-                        dbRowsInsert([
-                          MapEntry(value["item"], ItemListItem.fromMap(value))
-                        ], widget.db, widget.colType);
+                        dbRowsInsert(
+                          [
+                            MapEntry(
+                              value["item"],
+                              ItemListItem.fromMap(value),
+                            ),
+                          ],
+                          widget.db,
+                          widget.colType,
+                        );
                         itemListResponse.items.clear();
                         setState(() {
                           _itemListResponse =
                               Future<UtilItemListResponse>.value(
-                                  itemListResponse);
+                            itemListResponse,
+                          );
                         });
                         return value;
                       });
@@ -1954,45 +2428,57 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
 
                       if (error is Conflict) {
                         if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: Text(error.message),
-                            duration: const Duration(seconds: 5),
-                            action: SnackBarAction(
-                              label: 'OK',
-                              onPressed: () async {
-                                ScaffoldMessenger.of(context)
-                                    .hideCurrentSnackBar();
-                              },
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(error.message),
+                              duration: const Duration(seconds: 5),
+                              action: SnackBarAction(
+                                label: 'OK',
+                                onPressed: () async {
+                                  ScaffoldMessenger.of(
+                                    context,
+                                  ).hideCurrentSnackBar();
+                                },
+                              ),
                             ),
-                          ));
+                          );
                         }
                         if (true) {
-                          final itemUpdatedFromServer = await itemManager
-                              .fetch((itemManager.cacheLoad(eteItem)).uid);
+                          final itemUpdatedFromServer = await itemManager.fetch(
+                            (itemManager.cacheLoad(eteItem)).uid,
+                          );
                           final contentFromServer =
                               await itemUpdatedFromServer.getContent();
                           if (kDebugMode) {
                             print("------BEGIN returned from server ---------");
                             print("ETAG: ${itemUpdatedFromServer.etag}");
-                            print((VComponent.parse(
-                                        utf8.decode(contentFromServer))
-                                    as VCalendar)
-                                .toString());
+                            print(
+                              (VComponent.parse(utf8.decode(contentFromServer))
+                                      as VCalendar)
+                                  .toString(),
+                            );
                             print("------END returned from server ---------");
                           }
 
                           final cacheClient = await Cache.create(
-                              widget.client, await getCacheHiveDir());
-                          final colUid =
-                              await getCollectionUIDInCacheHive(cacheClient);
+                            widget.client,
+                            await getCacheHiveDir(),
+                          );
+                          final colUid = await getCollectionUIDInCacheHive(
+                            cacheClient,
+                          );
                           await cacheClient.itemSet(
-                              itemManager, colUid, itemUpdatedFromServer);
+                            itemManager,
+                            colUid,
+                            itemUpdatedFromServer,
+                          );
                           await cacheClient.dispose();
 
                           itemListResponse.items.remove(eteItem);
 
                           itemListResponse.items[itemManager.cacheSave(
-                              itemUpdatedFromServer)] = ItemListItem.fromMap({
+                            itemUpdatedFromServer,
+                          )] = ItemListItem.fromMap({
                             "itemContent": contentFromServer,
                             "itemUid": itemUpdatedFromServer.uid,
                             "itemIsDeleted": itemUpdatedFromServer.isDeleted,
@@ -2003,17 +2489,24 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                             "mtime":
                                 (await itemUpdatedFromServer.getMeta()).mtime,
                           });
-                          dbRowsInsert([
-                            MapEntry(
+                          dbRowsInsert(
+                            [
+                              MapEntry(
                                 itemManager.cacheSave(itemUpdatedFromServer),
-                                itemListResponse.items[itemManager
-                                    .cacheSave(itemUpdatedFromServer)]!)
-                          ], widget.db, widget.colType);
+                                itemListResponse.items[itemManager.cacheSave(
+                                  itemUpdatedFromServer,
+                                )]!,
+                              ),
+                            ],
+                            widget.db,
+                            widget.colType,
+                          );
                           itemListResponse.items.clear();
                           setState(() {
                             _itemListResponse =
                                 Future<UtilItemListResponse>.value(
-                                    itemListResponse);
+                              itemListResponse,
+                            );
                           });
                         }
                       }
@@ -2034,19 +2527,33 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
             });
           },
           onTap: () => onPressedItemWidget(
-                  context, eteItem, icalendar!, itemManager, item.value, client)
-              .then((value) {
+            context,
+            eteItem,
+            icalendar!,
+            itemManager,
+            item.value,
+            client,
+          ).then((value) {
             if (value != null) {
               itemListResponse.items.remove(eteItem);
-              itemListResponse.items[value["item"]] =
-                  ItemListItem.fromMap(value);
-              dbRowsInsert([
-                MapEntry(value["item"], itemListResponse.items[value["item"]]!)
-              ], widget.db, widget.colType);
+              itemListResponse.items[value["item"]] = ItemListItem.fromMap(
+                value,
+              );
+              dbRowsInsert(
+                [
+                  MapEntry(
+                    value["item"],
+                    itemListResponse.items[value["item"]]!,
+                  ),
+                ],
+                widget.db,
+                widget.colType,
+              );
               itemListResponse.items.clear();
               setState(() {
-                _itemListResponse =
-                    Future<UtilItemListResponse>.value(itemListResponse);
+                _itemListResponse = Future<UtilItemListResponse>.value(
+                  itemListResponse,
+                );
               });
               //_refreshIndicatorKey.currentState?.show();
             } else {
@@ -2062,13 +2569,19 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     if (children.length == 1 && todaySearch) {
       if (lastInPast != null) {
         children.add(const Divider());
-        children.add(Padding(
-          padding: const EdgeInsets.all(8.0),
-          child: Text.rich(TextSpan(children: [
-            TextSpan(text: AppLocalizations.of(context)!.later),
-            const WidgetSpan(child: Icon(Icons.upcoming, size: 18))
-          ])),
-        ));
+        children.add(
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(text: AppLocalizations.of(context)!.later),
+                  const WidgetSpan(child: Icon(Icons.upcoming, size: 18)),
+                ],
+              ),
+            ),
+          ),
+        );
         lastInPast = null;
       }
     }
@@ -2078,29 +2591,36 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
 
   Chip dueDateChip(DateTime? dateForLogicDue) {
     return Chip(
-        label: RichText(
-            text: TextSpan(children: [
-      TextSpan(
-          text: dateForLogicDue != null
-              ? (DateUtils.isSameDay(dateForLogicDue, today)
-                  ? (intl.DateFormat.Hm()).format(dateForLogicDue.toLocal())
-                  : intl.DateFormat("yyyy-MM-dd")
-                      .format(dateForLogicDue.toLocal()))
-              : null,
-          style: const TextStyle(color: Colors.black87)),
-      const WidgetSpan(
-          child: Icon(
-            Icons.punch_clock,
-            color: Colors.black87,
-          ),
-          alignment: PlaceholderAlignment.middle)
-    ])));
+      label: RichText(
+        text: TextSpan(
+          children: [
+            TextSpan(
+              text: dateForLogicDue != null
+                  ? (DateUtils.isSameDay(dateForLogicDue, today)
+                      ? (intl.DateFormat.Hm()).format(
+                          dateForLogicDue.toLocal(),
+                        )
+                      : intl.DateFormat(
+                          "yyyy-MM-dd",
+                        ).format(dateForLogicDue.toLocal()))
+                  : null,
+              style: const TextStyle(color: Colors.black87),
+            ),
+            const WidgetSpan(
+              child: Icon(Icons.punch_clock, color: Colors.black87),
+              alignment: PlaceholderAlignment.middle,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void filterItems(
-      Map<Uint8List, ItemListItem> itemMap,
-      List<ItemMapWrapper> itemsSorted,
-      Map<String, ItemMapWrapper> itemsByUID) {
+    Map<Uint8List, ItemListItem> itemMap,
+    List<ItemMapWrapper> itemsSorted,
+    Map<String, ItemMapWrapper> itemsByUID,
+  ) {
     for (final entry in itemMap.entries) {
       final key = entry.key;
       final value = entry.value;
@@ -2110,8 +2630,10 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       }
 
       try {
-        icalendar = VComponent.parse(utf8.decode(value.itemContent),
-            customParser: iCalendarCustomParser) as VCalendar;
+        icalendar = VComponent.parse(
+          utf8.decode(value.itemContent),
+          customParser: iCalendarCustomParser,
+        ) as VCalendar;
       } catch (e) {
         continue;
       }
@@ -2131,14 +2653,19 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
         continue;
       }
 
-      itemsSorted.add(ItemMapWrapper(
-          item: key, value: value.toMap(), icalendar: icalendar));
+      itemsSorted.add(
+        ItemMapWrapper(item: key, value: value.toMap(), icalendar: icalendar),
+      );
       itemsByUID[icalendar.todo!.uid] = itemsSorted.last;
     }
   }
 
-  Future<Map<String, dynamic>> onPressedToggleCompletion(Uint8List byteBuffer,
-      VCalendar icalendar, ItemManager itemManager, VTodo compTodo) async {
+  Future<Map<String, dynamic>> onPressedToggleCompletion(
+    Uint8List byteBuffer,
+    VCalendar icalendar,
+    ItemManager itemManager,
+    VTodo compTodo,
+  ) async {
     final eteItem = itemManager.cacheLoad(byteBuffer);
 
     // final itemClone = await itemManager.create(
@@ -2190,43 +2717,50 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
 
     final actualNextTodo = nextTodo ?? todoComp;
     actualNextTodo.checkValidity();
-    final itemMetaClone = (await itemClone.getMeta())
-        .copyWith(mtime: nextTodo?.lastModified ?? todoComp.lastModified);
+    final itemMetaClone = (await itemClone.getMeta()).copyWith(
+      mtime: nextTodo?.lastModified ?? todoComp.lastModified,
+    );
     await itemClone.setMeta(itemMetaClone);
 
     await itemClone.setContent(utf8.encode(actualNextTodo.parent!.toString()));
     await itemManager.transaction([itemClone]);
     await eteItem.setContent(await itemClone.getContent());
     return await fetchItemFromServerAndReturnMap(
-        itemManager, eteItem, itemClone);
+      itemManager,
+      eteItem,
+      itemClone,
+    );
   }
 
   Future<Map<String, dynamic>?> onPressedModifyDueDate(
-      Uint8List byteBuffer,
-      VCalendar icalendar,
-      ItemManager itemManager,
-      VTodo compTodo,
-      BuildContext context) async {
+    Uint8List byteBuffer,
+    VCalendar icalendar,
+    ItemManager itemManager,
+    VTodo compTodo,
+    BuildContext context,
+  ) async {
     final eteItem = itemManager.cacheLoad(byteBuffer);
-    final itemClone =
-        widget.itemManager.cacheLoad(widget.itemManager.cacheSave(eteItem));
+    final itemClone = widget.itemManager.cacheLoad(
+      widget.itemManager.cacheSave(eteItem),
+    );
     final todoComp = compTodo;
     bool sequenceChange = false;
     final changedStatus = todoComp.status;
     DateTime? updatedDueDate = todoComp.due;
     if (context.mounted) {
       updatedDueDate = await showDatePicker(
-              context: context,
-              firstDate: DateTime(2000),
-              lastDate: DateTime(2100),
-              initialDate: (todoComp.due ?? todoComp.start ?? DateTime.now()),
-              currentDate: (DateTime.now()))
-          .then((DateTime? date) async {
+        context: context,
+        firstDate: DateTime(2000),
+        lastDate: DateTime(2100),
+        initialDate: (todoComp.due ?? todoComp.start ?? DateTime.now()),
+        currentDate: (DateTime.now()),
+      ).then((DateTime? date) async {
         if (date != null && context.mounted) {
           final time = await showTimePicker(
             context: context,
             initialTime: TimeOfDay.fromDateTime(
-                todoComp.due ?? todoComp.start ?? DateTime.now()),
+              todoComp.due ?? todoComp.start ?? DateTime.now(),
+            ),
           );
           return time != null
               ? date.copyWith(hour: time.hour, minute: time.minute)
@@ -2271,7 +2805,8 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
       if (todoComp.start != null &&
           todoComp.due != null &&
           todoComp.due!.isAtSameMomentAs(
-              todoComp.start!.add(const Duration(seconds: 1)))) {
+            todoComp.start!.add(const Duration(seconds: 1)),
+          )) {
         todoComp.start = updatedDueDate;
 
         updatedDueDate = updatedDueDate?.add(const Duration(seconds: 1));
@@ -2306,8 +2841,9 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
 
     final actualNextTodo = nextTodo ?? todoComp;
     actualNextTodo.checkValidity();
-    final itemMetaClone = (await itemClone.getMeta())
-        .copyWith(mtime: nextTodo?.lastModified ?? todoComp.lastModified);
+    final itemMetaClone = (await itemClone.getMeta()).copyWith(
+      mtime: nextTodo?.lastModified ?? todoComp.lastModified,
+    );
     await itemClone.setMeta(itemMetaClone);
     if (kDebugMode) {
       print("--------BEGIN Intended changes---------");
@@ -2337,31 +2873,34 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
   }
 
   Future<Map<String, dynamic>?> onPressedModifySnooze(
-      Uint8List byteBuffer,
-      VCalendar icalendar,
-      ItemManager itemManager,
-      VTodo compTodo,
-      BuildContext context) async {
+    Uint8List byteBuffer,
+    VCalendar icalendar,
+    ItemManager itemManager,
+    VTodo compTodo,
+    BuildContext context,
+  ) async {
     final eteItem = itemManager.cacheLoad(byteBuffer);
-    final itemClone =
-        widget.itemManager.cacheLoad(widget.itemManager.cacheSave(eteItem));
+    final itemClone = widget.itemManager.cacheLoad(
+      widget.itemManager.cacheSave(eteItem),
+    );
     final todoComp = compTodo;
     bool sequenceChange = false;
     final changedStatus = todoComp.status;
     DateTime? updatedSnoozeDate = todoComp.due;
     if (context.mounted) {
       updatedSnoozeDate = await showDatePicker(
-              context: context,
-              firstDate: DateTime(2000),
-              lastDate: DateTime(2100),
-              initialDate: (todoComp.due ?? todoComp.start ?? DateTime.now()),
-              currentDate: (DateTime.now()))
-          .then((DateTime? date) async {
+        context: context,
+        firstDate: DateTime(2000),
+        lastDate: DateTime(2100),
+        initialDate: (todoComp.due ?? todoComp.start ?? DateTime.now()),
+        currentDate: (DateTime.now()),
+      ).then((DateTime? date) async {
         if (date != null && context.mounted) {
           final time = await showTimePicker(
             context: context,
             initialTime: TimeOfDay.fromDateTime(
-                todoComp.due ?? todoComp.start ?? DateTime.now()),
+              todoComp.due ?? todoComp.start ?? DateTime.now(),
+            ),
           );
           return time != null
               ? date.copyWith(hour: time.hour, minute: time.minute)
@@ -2403,15 +2942,24 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     }
 
     if (updatedSnoozeDate != null && updatedSnoozeDate != todoComp.due) {
-      todoComp.setProperty(DateTimeProperty.create(
-          "X-MOZ-SNOOZE-TIME", updatedSnoozeDate.toUtc())!);
       todoComp.setProperty(
-          DateTimeProperty.create("X-MOZ-LASTACK", DateTime.now().toUtc())!);
-      todoComp.setProperty(IntegerProperty.create(
+        DateTimeProperty.create(
+          "X-MOZ-SNOOZE-TIME",
+          updatedSnoozeDate.toUtc(),
+        )!,
+      );
+      todoComp.setProperty(
+        DateTimeProperty.create("X-MOZ-LASTACK", DateTime.now().toUtc())!,
+      );
+      todoComp.setProperty(
+        IntegerProperty.create(
           "X-MOZ-GENERATION",
           int.parse(
-                  todoComp.getProperty("X-MOZ-GENERATION")?.textValue ?? "0") +
-              1)!);
+                todoComp.getProperty("X-MOZ-GENERATION")?.textValue ?? "0",
+              ) +
+              1,
+        )!,
+      );
       sequenceChange = true;
     }
 
@@ -2428,8 +2976,9 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
 
     final actualNextTodo = nextTodo ?? todoComp;
     actualNextTodo.checkValidity();
-    final itemMetaClone = (await itemClone.getMeta())
-        .copyWith(mtime: nextTodo?.lastModified ?? todoComp.lastModified);
+    final itemMetaClone = (await itemClone.getMeta()).copyWith(
+      mtime: nextTodo?.lastModified ?? todoComp.lastModified,
+    );
     await itemClone.setMeta(itemMetaClone);
 
     await itemClone.setContent(utf8.encode(actualNextTodo.parent!.toString()));
@@ -2437,11 +2986,17 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     final eteItemFromServer = await itemManager.fetch(eteItem.uid);
     await eteItem.setContent(await eteItemFromServer.getContent());
     return await fetchItemFromServerAndReturnMap(
-        itemManager, eteItem, itemClone);
+      itemManager,
+      eteItem,
+      itemClone,
+    );
   }
 
   Future<Map<String, dynamic>> fetchItemFromServerAndReturnMap(
-      ItemManager itemManager, Item eteItem, Item itemClone) async {
+    ItemManager itemManager,
+    Item eteItem,
+    Item itemClone,
+  ) async {
     final eteItemFromServer = await itemManager.fetch(eteItem.uid);
     var contentFromServer = await eteItemFromServer.getContent();
     final icalendarUpdated =
