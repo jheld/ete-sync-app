@@ -31,7 +31,7 @@ class ChangePasswordModal extends StatefulWidget {
   const ChangePasswordModal({super.key, required this.account});
 
   @override
-  _ChangePasswordModalState createState() => _ChangePasswordModalState();
+  State<StatefulWidget> createState() => _ChangePasswordModalState();
 
   final Account account;
 }
@@ -40,13 +40,9 @@ class _ChangePasswordModalState extends State<ChangePasswordModal> {
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
   final TextEditingController _newPasswordController = TextEditingController();
 
-  void _changePassword() async {
+  Future<void> _changePassword(String password) async {
     if (_formKey.currentState!.validate()) {
-      await widget.account.changePassword(_newPasswordController.text);
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Password changed successfully')));
-      Navigator.pop(context);
+      await widget.account.changePassword(password);
     }
   }
 
@@ -89,7 +85,19 @@ class _ChangePasswordModalState extends State<ChangePasswordModal> {
         TextButton(
           child: Text('Change Password'),
           onPressed: () async {
-            _changePassword();
+            await _changePassword(_newPasswordController.text).then((value) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(
+                  context,
+                ).showSnackBar(
+                    SnackBar(content: Text('Password changed successfully')));
+              }
+              return value;
+            });
+
+            if (context.mounted) {
+              Navigator.pop(context);
+            }
           },
         ),
       ],
@@ -213,7 +221,6 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
           Uri.parse(serverUrlController.text).toString(),
         );
 
-        //final client = widget.client;
         username = usernameController.text;
         try {
           etebase = await Account.login(
@@ -229,11 +236,12 @@ class _AccountLoadPageState extends State<AccountLoadPage> {
           _loggingIn = false;
           _formKey.currentState!.reset();
           if (e is Unauthorized) {
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(SnackBar(content: Text(e.message)));
+            if (context.mounted) {
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(SnackBar(content: Text(e.message)));
+            }
           }
-          //if (e.code == EtebaseErrorCode.unauthorized) {}
         }
         await prefs.setString("username", username);
       }
@@ -442,6 +450,7 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
     widget.client.dispose();
     windowManager.removeListener(this);
     refreshTimer?.cancel();
+    _searchTextController.dispose();
 
     super.dispose();
   }
@@ -464,6 +473,11 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
   @override
   void initState() {
     super.initState();
+    _searchTextController.addListener(() {
+      setState(() {
+        _searchText = _searchTextController.text;
+      });
+    });
     windowManager.addListener(this);
 
     //widget.db.execute('''drop table if exists etebase_item_model;''');
@@ -726,18 +740,6 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                                   });
                                 },
                               ),
-                        onSubmitted: (value) async {
-                          setState(() {
-                            _searchText = value;
-                            _searchTextController.text = value;
-                          });
-                        },
-                        onChanged: (value) async {
-                          setState(() {
-                            _searchText = value;
-                            _searchTextController.text = value;
-                          });
-                        },
                       ),
                     ),
                     buildExpansionTileTaskFinishedFilters(
@@ -1435,13 +1437,15 @@ class _MyHomePageState extends State<MyHomePage> with WindowListener {
                     final etebase = await cacheClient.loadAccount(
                       SecureKey.fromList(sodium, eteCacheAccountEncryptionKey!),
                     );
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (BuildContext context) =>
-                            ChangePasswordModal(account: etebase),
-                      ),
-                    );
+                    if (context.mounted) {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (BuildContext context) =>
+                              ChangePasswordModal(account: etebase),
+                        ),
+                      );
+                    }
                   },
                   child: const Text("Change Password"),
                 ),
